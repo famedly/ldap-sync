@@ -1,11 +1,27 @@
 [package]
-name = "project-name"
+name = "ldap-sync"
 version = "0.1.0"
 authors = []
 edition = "2021"
 publish = false
 
 [dependencies]
+anyhow = { version = "1.0.81", features = ["backtrace"] }
+bincode = "1.3.3"
+# error-stack = "0.4.1"
+ldap-poller = { rev = "cc2e8f89c1dc7f1516489f3c1d04c32d8eeb1dbf", git = "ssh://git@github.com/famedly/ldap-poller.git" }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_yaml = "0.9.34"
+tokio = { version = "1.35.1", features = [
+    "macros",
+    "rt-multi-thread",
+    "sync",
+    "time",
+    "fs",
+] }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"
+url = "2.5.2"
 
 [build-dependencies]
 vergen = { version = "8.2.6", features = ["git", "gitcl", "build"] } # vergen passes metadata like the version and git commit hash to cargo as a compile-time environment variables
