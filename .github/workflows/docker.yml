@@ -1,0 +1,13 @@
+name: "Docker"
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "*" ]
+
+jobs:
+  build:
+    uses: famedly/backend-build-workflows/.github/workflows/docker-backend.yml@main
+    secrets: inherit
+    with:
+      name: project-name

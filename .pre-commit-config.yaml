@@ -1,0 +1,23 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+    -   id: check-byte-order-marker
+    -   id: check-case-conflict
+    -   id: check-merge-conflict
+    -   id: check-symlinks
+    -   id: check-yaml
+    -   id: check-toml
+    -   id: check-json
+    -   id: end-of-file-fixer
+    -   id: mixed-line-ending
+    -   id: trailing-whitespace
+-   repo: git@github.com:famedly/backend-pre-commit-templates.git
+    rev: aa3b2b339abad304b2be3122eb86f4b4df272a6b
+    hooks:
+    -   id: fmt
+    -   id: clippy
+-   repo: https://github.com/crate-ci/typos
+    rev: v1.19.0
+    hooks:
+    -   id: typos

@@ -1,0 +1,25 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_size = 4
+indent_style = tab
+
+[*.ya?ml]
+indent_style = space
+indent_size = 2
+
+[*.sql]
+indent_style = space
+
+[*.toml]
+indent_style = space
+
+[*.md]
+indent_style = space
+indent_size = 2
+
+[*.ldif]
+insert_final_newline = false
