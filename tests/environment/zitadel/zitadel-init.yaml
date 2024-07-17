@@ -1,0 +1,9 @@
+FirstInstance:
+  MachineKeyPath: /zitadel-config/service-user.json
+  Org:
+    Machine:
+      Machine:
+        Username: zitadel-admin
+        Name: Admin
+      MachineKey:
+        Type: 1

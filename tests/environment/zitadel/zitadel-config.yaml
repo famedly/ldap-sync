@@ -1,6 +1,6 @@
 Port: 8080
 ExternalPort: 8080
-ExternalDomain: zitadel
+ExternalDomain: localhost
 ExternalSecure: false
 
 TLS:

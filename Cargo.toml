@@ -13,9 +13,11 @@ ldap-poller = { rev = "cc2e8f89c1dc7f1516489f3c1d04c32d8eeb1dbf", git = "ssh://g
 serde = { version = "1.0.203", features = ["derive"] }
 serde_yaml = "0.9.34"
 tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "sync", "time", "fs", "rt"] }
+tokio-stream = "0.1.15"
 tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 url = "2.5.2"
+zitadel-rust-client = { git = "ssh://git@github.com/famedly/zitadel-rust-client.git", version = "0.1.0", branch = "tlater/public-config" }
 
 [build-dependencies]
 vergen = { version = "8.2.6", features = ["git", "gitcl", "build"] } # vergen passes metadata like the version and git commit hash to cargo as a compile-time environment variables
