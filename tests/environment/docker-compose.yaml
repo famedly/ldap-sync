@@ -1,0 +1,60 @@
+services:
+  ldap:
+    image: lldap/lldap:2024-06-16-debian
+    ports:
+      - 3890:3890
+      - 6360:6360
+      - 17170:17170 # web front-end for debugging
+    volumes:
+      - type: bind
+        source: ./certs
+        target: /certs
+        read_only: true
+    environment:
+      - LLDAP_LDAP_BASE_DN=dc=example,dc=com
+      - LLDAP_LDAPS_OPTIONS__ENABLED=true
+      - LLDAP_LDAPS_OPTIONS__CERT_FILE=/certs/test-ldap.crt
+      - LLDAP_LDAPS_OPTIONS__KEY_FILE=/certs/test-ldap.key
+
+  ldap-config:
+    image: famedly/ldap-config
+    build:
+      context: ldap-setup
+    depends_on:
+      ldap:
+        condition: 'service_healthy'
+    healthcheck:
+      test: ["CMD-SHELL", "cat", "/ready"]
+      interval: '5s'
+      timeout: '30s'
+      retries: 5
+      start_period: '5s'
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:latest
+    command: start-from-init --masterkey "MasterkeyNeedsToHave32Characters" --tlsMode disabled --config /zitadel.yaml
+    ports:
+      - 8080:8080
+    volumes:
+      - type: bind
+        source: ./zitadel/zitadel-config.yaml
+        target: /zitadel.yaml
+        read_only: true
+    depends_on:
+      db:
+        condition: 'service_healthy'
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready", "--config", "/zitadel.yaml"]
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=zitadel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "zitadel", "-U", "postgres"]
+      interval: '5s'
+      timeout: '30s'
+      retries: 5
+      start_period: '20s'
