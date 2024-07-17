@@ -1,0 +1,8 @@
+experimental = ["setup-scripts"]
+
+[script.start-e2e-env]
+command =  "./.config/starte2e.sh"
+
+[[profile.default.scripts]]
+filter = "test(e2e)"
+setup = "start-e2e-env"

@@ -1,0 +1,26 @@
+Port: 8080
+ExternalPort: 8080
+ExternalDomain: zitadel
+ExternalSecure: false
+
+TLS:
+  # If enabled, ZITADEL will serve all traffic over TLS (HTTPS and gRPC)
+  # you must then also provide a private key and certificate to be used for the connection
+  # either directly or by a path to the corresponding file
+  Enabled: false # ZITADEL_TLS_ENABLED
+
+Database:
+  postgres:
+    Host: db
+    Port: 5432
+    Database: zitadel
+    User:
+      Username: zitadel
+      Password: zitadel
+      SSL:
+        Mode: disable
+    Admin:
+      Username: postgres
+      Password: postgres
+      SSL:
+        Mode: disable
