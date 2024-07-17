@@ -32,19 +32,18 @@ services:
 
   zitadel:
     image: ghcr.io/zitadel/zitadel:latest
-    command: start-from-init --masterkey "MasterkeyNeedsToHave32Characters" --tlsMode disabled --config /zitadel.yaml
+    command: start-from-init --masterkey "MasterkeyNeedsToHave32Characters" --tlsMode disabled --config /zitadel-config/zitadel-config.yaml --steps /zitadel-config/zitadel-init.yaml
     ports:
       - 8080:8080
     volumes:
       - type: bind
-        source: ./zitadel/zitadel-config.yaml
-        target: /zitadel.yaml
-        read_only: true
+        source: ./zitadel/
+        target: /zitadel-config/
     depends_on:
       db:
         condition: 'service_healthy'
     healthcheck:
-      test: ["CMD", "/app/zitadel", "ready", "--config", "/zitadel.yaml"]
+      test: ["CMD", "/app/zitadel", "ready", "--config", "/zitadel-config/zitadel-config.yaml"]
 
   db:
     image: postgres:16-alpine

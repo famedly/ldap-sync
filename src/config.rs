@@ -1,8 +1,62 @@
 //! All sync client configuration structs and logic
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+use anyhow::{bail, Result};
 use ldap_poller::{config::TLSConfig, AttributeConfig, CacheMethod, ConnectionConfig, Searches};
 use serde::Deserialize;
+use url::Url;
+
+impl Config {
+	/// Read the config from a file
+	pub async fn from_file(path: &Path) -> Result<Self> {
+		let config: Config = serde_yaml::from_slice(&tokio::fs::read(path).await?)?;
+		config.validate()
+	}
+
+	/// Validate the config and return a valid configuration
+	fn validate(mut self) -> Result<Self> {
+		self.famedly.url = validate_famedly_url(self.famedly.url)?;
+
+		Ok(self)
+	}
+}
+
+/// Validate the famedly URL
+fn validate_famedly_url(url: Url) -> Result<Url> {
+	// If a URL contains a port, the domain name may appear as a
+	// scheme and pass through URL parsing despite lacking a scheme
+	if url.scheme() != "https" && url.scheme() != "http" {
+		bail!("famedly URL scheme must be `http` or `https`, e.g. `https://{}`", url);
+	}
+
+	Ok(url)
+}
+
+#[cfg(test)]
+mod tests {
+	#![allow(clippy::expect_used)]
+	use super::*;
+
+	#[test]
+	fn test_famedly_url_validate_valid() {
+		let url = Url::parse("https://famedly.de").expect("invalid url");
+		let validated = validate_famedly_url(url).expect("url failed to validate");
+		assert_eq!(validated.to_string(), "https://famedly.de/");
+	}
+
+	#[test]
+	fn test_famedly_url_validate_trailing_slash_path() {
+		let url = Url::parse("https://famedly.de/test/").expect("invalid url");
+		let validated = validate_famedly_url(url).expect("url failed to validate");
+		assert_eq!(validated.to_string(), "https://famedly.de/test/");
+	}
+
+	#[test]
+	fn test_famedly_url_validate_scheme() {
+		let url = Url::parse("famedly.de:443").expect("invalid url");
+		assert!(validate_famedly_url(url).is_err());
+	}
+}
 
 /// Configuration for the sync client
 #[derive(Debug, Clone, Deserialize)]
@@ -23,7 +77,7 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct LdapConfig {
 	/// The URL of the LDAP/AD server
-	pub url: url::Url,
+	pub url: Url,
 	/// Enable StartTLS for secure communication
 	pub start_tls: bool,
 	/// Whether to disable tls verification
@@ -115,11 +169,9 @@ pub struct LdapAttributesMapping {
 #[derive(Debug, Clone, Deserialize)]
 pub struct FamedlyConfig {
 	/// The URL for Famedly authentication
-	pub url: String,
-	/// Client ID provided by Famedly
-	pub client_id: String,
-	/// Client secret provided by Famedly
-	pub client_secret: String,
+	pub url: Url,
+	/// File containing a private key for authentication to Famedly
+	pub key_file: PathBuf,
 	/// Organization ID provided by Famedly
 	pub organization_id: String,
 	/// Project ID provided by Famedly
@@ -131,7 +183,7 @@ pub struct FamedlyConfig {
 pub type Set<T> = Vec<T>;
 
 /// Opt-in features
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub enum FeatureFlag {
 	/// If SSO should be activated. It requires idpId, idpUserName, idpUserId
 	/// mapping
