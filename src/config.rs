@@ -1,11 +1,7 @@
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
-use ldap_poller::{
-	config::TLSConfig, ldap::EntryStatus, AttributeConfig, Cache, CacheMethod, ConnectionConfig,
-	Ldap, SearchEntry, SearchEntryExt, Searches,
-};
+use ldap_poller::{config::TLSConfig, AttributeConfig, CacheMethod, ConnectionConfig, Searches};
 use serde::Deserialize;
-use tracing::level_filters::LevelFilter;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
