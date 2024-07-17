@@ -1,3 +1,4 @@
+//! Basic LDAP -> famedly Zitadel sync tool
 use std::{process::ExitCode, str::FromStr};
 
 use anyhow::Context;
@@ -15,6 +16,7 @@ async fn main() -> ExitCode {
 	}
 }
 
+/// Simple entrypoint without any bells or whistles
 async fn read_the_config_and_do_the_thing() -> anyhow::Result<()> {
 	let config: Config = serde_yaml::from_slice(
 		&tokio::fs::read(std::env::var("FAMEDLY_LDAP_SYNC_CONFIG").unwrap_or("config.yaml".into()))
