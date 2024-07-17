@@ -7,7 +7,7 @@ use ldap_poller::{ldap::EntryStatus, Ldap};
 mod config;
 pub use config::Config;
 
-/// Do the thing
+/// Run the sync
 pub async fn do_the_thing(config: Config) -> Result<()> {
 	let (mut ldap_client, mut ldap_receiver) = Ldap::new(config.ldap.into(), None);
 	tokio::spawn(async move {

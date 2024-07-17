@@ -1,24 +1,34 @@
+//! All sync client configuration structs and logic
 use std::path::PathBuf;
 
 use ldap_poller::{config::TLSConfig, AttributeConfig, CacheMethod, ConnectionConfig, Searches};
 use serde::Deserialize;
 
+/// Configuration for the sync client
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
+	/// LDAP-specific configuration
 	pub ldap: LdapConfig,
+	/// Configuration related to Famedly Zitadel
 	pub famedly: FamedlyConfig,
+	/// Opt-in features
 	pub feature_flags: Set<FeatureFlag>,
+	/// Where to cache the last known LDAP state
 	pub cache_path: String,
+	/// The sync tool log level
 	pub log_level: Option<String>,
 }
 
+/// LDAP-specific configuration
 #[derive(Debug, Clone, Deserialize)]
 pub struct LdapConfig {
 	/// The URL of the LDAP/AD server
 	pub url: url::Url,
 	/// Enable StartTLS for secure communication
 	pub start_tls: bool,
+	/// Whether to disable tls verification
 	pub no_tls_verify: bool,
+	/// Path to the root certificates
 	pub root_certificates_path: Option<PathBuf>,
 	/// The base DN for searching users
 	pub base_dn: String,
@@ -34,8 +44,10 @@ pub struct LdapConfig {
 	pub user_filter: String,
 	/// Timeout for LDAP operations in seconds
 	pub timeout: u64,
-	/// TODO
+	/// A mapping from the mostly free-form LDAP attributes to
+	/// attribute names as used by famedly
 	pub attributes: LdapAttributesMapping,
+	/// Whether to update deleted entries
 	pub check_for_deleted_entries: bool,
 }
 
@@ -73,6 +85,8 @@ impl From<LdapConfig> for ldap_poller::Config {
 	}
 }
 
+/// A mapping from the mostly free-form LDAP attributes to attribute
+/// names as used by famedly
 #[derive(Debug, Clone, Deserialize)]
 pub struct LdapAttributesMapping {
 	/// Attribute for the user's first name
@@ -93,9 +107,11 @@ pub struct LdapAttributesMapping {
 	pub enable_value: String,
 	/// Marks an account as enabled (LDAP = FALSE, inactive)
 	pub disable_value: String,
+	/// Last modified
 	pub last_modified: Option<String>,
 }
 
+/// Configuration related to Famedly Zitadel
 #[derive(Debug, Clone, Deserialize)]
 pub struct FamedlyConfig {
 	/// The URL for Famedly authentication
@@ -114,6 +130,7 @@ pub struct FamedlyConfig {
 
 pub type Set<T> = Vec<T>;
 
+/// Opt-in features
 #[derive(Debug, Clone, Deserialize)]
 pub enum FeatureFlag {
 	/// If SSO should be activated. It requires idpId, idpUserName, idpUserId
