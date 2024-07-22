@@ -1,34 +1,37 @@
 services:
   ldap:
-    image: lldap/lldap:2024-06-16-debian
+    image: bitnami/openldap:latest
     ports:
-      - 3890:3890
-      - 6360:6360
-      - 17170:17170 # web front-end for debugging
+      - 1389:1389
+      - 1636:1636
+    environment:
+      - LDAP_ENABLE_TLS=yes
+      - LDAP_TLS_CERT_FILE=/certs/test-ldap.crt
+      - LDAP_TLS_KEY_FILE=/certs/test-ldap.key
+      - LDAP_TLS_CA_FILE=/certs/test-ldap-ca.crt
     volumes:
       - type: bind
         source: ./certs
         target: /certs
         read_only: true
-    environment:
-      - LLDAP_LDAP_BASE_DN=dc=example,dc=com
-      - LLDAP_LDAPS_OPTIONS__ENABLED=true
-      - LLDAP_LDAPS_OPTIONS__CERT_FILE=/certs/test-ldap.crt
-      - LLDAP_LDAPS_OPTIONS__KEY_FILE=/certs/test-ldap.key
 
-  ldap-config:
-    image: famedly/ldap-config
-    build:
-      context: ldap-setup
+  ldap-setup:
+    image: bitnami/openldap:latest
+    entrypoint: /ldap-setup/ldap-setup.sh
+    volumes:
+      - type: bind
+        source: ./ldap-setup
+        target: /ldap-setup
+        read_only: true
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: '1s'
+      timeout: '30s'
+      retries: 30
+      start_period: '5s'
     depends_on:
       ldap:
-        condition: 'service_healthy'
-    healthcheck:
-      test: ["CMD-SHELL", "cat", "/ready"]
-      interval: '5s'
-      timeout: '30s'
-      retries: 5
-      start_period: '5s'
+        condition: 'service_started'
 
   zitadel:
     image: ghcr.io/zitadel/zitadel:latest

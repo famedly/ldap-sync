@@ -37,7 +37,10 @@ async fn get_user_changes(
 	ReceiverStream::new(ldap_receiver)
 		.fold((vec![], vec![], vec![]), |(mut added, mut changed, mut removed), entry_status| {
 			match entry_status {
-				EntryStatus::New(entry) => added.push(entry),
+				EntryStatus::New(entry) => {
+					tracing::debug!("New entry: {:?}", entry);
+					added.push(entry);
+				}
 				EntryStatus::Changed { old: _, new } => changed.push(new),
 				EntryStatus::Removed(entry) => removed.push(entry),
 			};

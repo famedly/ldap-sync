@@ -15,18 +15,21 @@ async fn test_e2e_simple_sync() {
 	let mut ldap = open_ldap_connection().await;
 
 	ldap.add(
-		"uid=bobby,ou=people,dc=example,dc=com",
+		&format!("cn=Bob,{}", config().await.ldap.base_dn.as_str()),
 		vec![
-			("givenname", HashSet::from(["Bob"])),
-			("sn", HashSet::from(["Wopper"])),
-			("cn", HashSet::from(["Bobby"])),
+			("objectClass", HashSet::from(["inetOrgPerson", "shadowAccount"])),
+			("cn", HashSet::from(["Bob"])),
+			("sn", HashSet::from(["Tables"])),
+			("displayName", HashSet::from(["Bobby"])),
 			("mail", HashSet::from(["bobby@famedly.de"])),
-			("entryuuid", HashSet::from(["8bd4ac58-c5e9-4e9e-b937-35f5a764874d"])),
-			("telephonenumber", HashSet::from(["+4255123541"])),
-			("useraccountcontrol", HashSet::from(["512"])),
+			("telephoneNumber", HashSet::from(["+1-201-555-0123"])),
+			("uid", HashSet::from(["bobby"])),
+			("shadowInactive", HashSet::from(["512"])),
 		],
 	)
 	.await
+	.expect("failed to create debug user")
+	.success()
 	.expect("failed to create debug user");
 
 	tracing::info!("Successfully added test user");
@@ -54,7 +57,7 @@ async fn open_ldap_connection() -> Ldap {
 
 	ldap3::drive!(conn);
 
-	ldap.simple_bind("cn=admin,ou=people,dc=example,dc=com", "password")
+	ldap.simple_bind(&config.ldap.bind_dn, &config.ldap.bind_password)
 		.await
 		.expect("could not authenticate to ldap");
 
