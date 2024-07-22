@@ -129,8 +129,13 @@ impl From<LdapConfig> for ldap_poller::Config {
 			attributes: AttributeConfig {
 				pid: attributes.user_id,
 				updated: attributes.last_modified,
-				// TODO: add all
-				additional: vec![attributes.first_name, attributes.last_name],
+				additional: vec![
+					attributes.first_name,
+					attributes.last_name,
+					attributes.preferred_username,
+					attributes.email,
+					attributes.phone,
+				],
 				attrs_to_track: vec![attributes.status],
 			},
 			cache_method: CacheMethod::ModificationTime,
