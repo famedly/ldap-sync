@@ -15,13 +15,19 @@ services:
         target: /certs
         read_only: true
 
-  ldap-setup:
-    image: bitnami/openldap:latest
-    entrypoint: /ldap-setup/ldap-setup.sh
+  test-setup:
+    image: famedly/ldap-sync-testenv
+    build:
+      context: ./test-setup
+    entrypoint: /ldap/ldap-setup.sh
     volumes:
       - type: bind
-        source: ./ldap-setup
-        target: /ldap-setup
+        source: ./ldap
+        target: /ldap
+        read_only: true
+      - type: bind
+        source: ./zitadel/service-user.json
+        target: /zitadel-service-user.json
         read_only: true
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/ready"]
