@@ -68,7 +68,7 @@ pub struct Config {
 	/// Opt-in features
 	pub feature_flags: Set<FeatureFlag>,
 	/// Where to cache the last known LDAP state
-	pub cache_path: String,
+	pub cache_path: PathBuf,
 	/// The sync tool log level
 	pub log_level: Option<String>,
 }

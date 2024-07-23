@@ -4,6 +4,7 @@ use std::{collections::HashSet, path::Path, time::Duration};
 
 use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings};
 use ldap_sync::{do_the_thing, Config};
+use tempfile::TempDir;
 use test_log::test;
 use tokio::sync::OnceCell;
 use zitadel_rust_client::{
@@ -11,6 +12,7 @@ use zitadel_rust_client::{
 };
 
 static CONFIG: OnceCell<Config> = OnceCell::const_new();
+static TEMPDIR: OnceCell<TempDir> = OnceCell::const_new();
 
 #[test(tokio::test)]
 #[test_log(default_log_filter = "debug")]
@@ -230,9 +232,17 @@ async fn open_zitadel_connection() -> Zitadel {
 async fn config() -> &'static Config {
 	CONFIG
 		.get_or_init(|| async {
-			Config::from_file(Path::new("tests/environment/config.yaml"))
+			let mut config = Config::from_file(Path::new("tests/environment/config.yaml"))
 				.await
-				.expect("failed to parse test env file")
+				.expect("failed to parse test env file");
+
+			let tempdir = TEMPDIR
+				.get_or_init(|| async { TempDir::new().expect("failed to initialize cache dir") })
+				.await;
+
+			config.cache_path = tempdir.path().join("cache.bin");
+
+			config
 		})
 		.await
 }

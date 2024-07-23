@@ -1224,6 +1224,7 @@ dependencies = [
  "ldap3",
  "serde",
  "serde_yaml",
+ "tempfile",
  "test-log",
  "tokio",
  "tokio-stream",
