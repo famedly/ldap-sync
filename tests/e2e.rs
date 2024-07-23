@@ -6,6 +6,7 @@ use ldap3::{Ldap, LdapConnAsync, LdapConnSettings};
 use ldap_sync::{do_the_thing, Config};
 use test_log::test;
 use tokio::sync::OnceCell;
+use zitadel_rust_client::{Config as ZitadelConfig, Zitadel};
 
 static CONFIG: OnceCell<Config> = OnceCell::const_new();
 
@@ -37,6 +38,22 @@ async fn test_e2e_simple_sync() {
 	ldap.unbind().await.expect("failed to disconnect from ldap");
 
 	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("bobby@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+
+	assert!(user.is_some());
+}
+
+/// Open a connection to the configured Zitadel backend
+async fn open_zitadel_connection() -> Zitadel {
+	let famedly = config().await.famedly.clone();
+	let zitadel_config = ZitadelConfig::new(famedly.url, famedly.key_file);
+
+	Zitadel::new(&zitadel_config).await.expect("failed to set up Zitadel client")
 }
 
 /// Open an ldap connection to the configured ldap backend
