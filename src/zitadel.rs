@@ -34,10 +34,7 @@ impl Zitadel {
 		let (users, invalid): (
 			Vec<Result<ImportHumanUserRequest>>,
 			Vec<Result<ImportHumanUserRequest>>,
-		) = users
-			.into_iter()
-			.map(|user| user_from_ldap(&user, &self.config))
-			.partition(Result::is_ok);
+		) = users.into_iter().map(|user| user_from_ldap(&user, &self.config)).partition(Result::is_ok);
 
 		if !invalid.is_empty() {
 			let messages = invalid
@@ -50,7 +47,13 @@ impl Zitadel {
 
 		for user in users {
 			if let Ok(user) = user {
-				self.client.create_human_user(&self.config.famedly.organization_id, user).await?;
+				if let Err(error) = self
+					.client
+					.create_human_user(&self.config.famedly.organization_id, user.clone())
+					.await
+				{
+					tracing::error!("Failed to sync user `{}`: {}", user.user_name, error);
+				};
 			} else {
 				tracing::error!(
 					"Hit error in converted user, this should not be possible: {:?}",
