@@ -2,7 +2,6 @@
 
 set -eu
 
-# Shut down any still running ldap-setup first
-docker compose --project-directory ./tests/environment down -v ldap-setup || true
-# docker compose --project-directory ./tests/environment down --remove-orphans --volumes || true
+# Shut down any still running test-setup first
+docker compose --project-directory ./tests/environment down -v test-setup || true
 docker compose --project-directory ./tests/environment up --wait

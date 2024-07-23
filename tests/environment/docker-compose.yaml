@@ -15,13 +15,18 @@ services:
         target: /certs
         read_only: true
 
-  ldap-setup:
-    image: bitnami/openldap:latest
-    entrypoint: /ldap-setup/ldap-setup.sh
+  test-setup:
+    image: famedly/ldap-sync-testenv
+    build:
+      context: ./test-setup
+    entrypoint: /environment/test-setup.sh
     volumes:
       - type: bind
-        source: ./ldap-setup
-        target: /ldap-setup
+        source: ./
+        target: /environment
+      - type: bind
+        source: ../../config.sample.yaml
+        target: /config.sample.yaml
         read_only: true
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/ready"]
@@ -32,6 +37,8 @@ services:
     depends_on:
       ldap:
         condition: 'service_started'
+      zitadel:
+        condition: 'service_healthy'
 
   zitadel:
     image: ghcr.io/zitadel/zitadel:latest
