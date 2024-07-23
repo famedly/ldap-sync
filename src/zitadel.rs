@@ -34,7 +34,10 @@ impl Zitadel {
 		let (users, invalid): (
 			Vec<Result<ImportHumanUserRequest>>,
 			Vec<Result<ImportHumanUserRequest>>,
-		) = users.into_iter().map(|user| user_from_ldap(&user, &self.config)).partition(Result::is_ok);
+		) = users
+			.into_iter()
+			.filter_map(|user| user_from_ldap(&user, &self.config).transpose())
+			.partition(Result::is_ok);
 
 		if !invalid.is_empty() {
 			let messages = invalid
@@ -70,7 +73,7 @@ impl Zitadel {
 /// ImportHumanUserRequest.
 ///
 /// Convert an ldap entry into a user import request
-fn user_from_ldap(entry: &SearchEntry, config: &Config) -> Result<ImportHumanUserRequest> {
+fn user_from_ldap(entry: &SearchEntry, config: &Config) -> Result<Option<ImportHumanUserRequest>> {
 	/// Read an attribute from the entry
 	fn read_entry(entry: &SearchEntry, attribute: &str) -> Result<String> {
 		entry
@@ -83,13 +86,16 @@ fn user_from_ldap(entry: &SearchEntry, config: &Config) -> Result<ImportHumanUse
 			.cloned()
 	}
 
+	if read_entry(entry, &config.ldap.attributes.status)? == config.ldap.attributes.disable_value {
+		return Ok(None);
+	};
+
 	let first_name = read_entry(entry, &config.ldap.attributes.first_name)?;
 	let last_name = read_entry(entry, &config.ldap.attributes.last_name)?;
 	let _preferred_username = read_entry(entry, &config.ldap.attributes.preferred_username)?;
 	let email = read_entry(entry, &config.ldap.attributes.email)?;
 	let user_id = read_entry(entry, &config.ldap.attributes.user_id)?;
 	let phone = read_entry(entry, &config.ldap.attributes.phone)?;
-	let _status = read_entry(entry, &config.ldap.attributes.status)?;
 
 	let display_name = format!("{last_name}, {first_name}");
 
@@ -103,7 +109,7 @@ fn user_from_ldap(entry: &SearchEntry, config: &Config) -> Result<ImportHumanUse
 		vec![]
 	};
 
-	Ok(ImportHumanUserRequest {
+	Ok(Some(ImportHumanUserRequest {
 		user_name: email.clone(),
 		profile: Some(Profile {
 			first_name,
@@ -127,5 +133,5 @@ fn user_from_ldap(entry: &SearchEntry, config: &Config) -> Result<ImportHumanUse
 		request_passwordless_registration: true,
 		otp_code: String::default(),
 		idps,
-	})
+	}))
 }
