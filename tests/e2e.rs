@@ -6,7 +6,9 @@ use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings};
 use ldap_sync::{do_the_thing, Config};
 use test_log::test;
 use tokio::sync::OnceCell;
-use zitadel_rust_client::{Config as ZitadelConfig, Zitadel};
+use zitadel_rust_client::{
+	error::Error as ZitadelError, error::TonicErrorCode, Config as ZitadelConfig, Type, Zitadel,
+};
 
 static CONFIG: OnceCell<Config> = OnceCell::const_new();
 
@@ -18,12 +20,115 @@ async fn test_e2e_simple_sync() {
 		"Bob",
 		"Tables",
 		"Bobby",
-		"bob.tables@famedly.de",
+		"simple@famedly.de",
 		"+12015550123",
-		"bobby",
+		"simple",
 		false,
 	)
 	.await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("simple@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+
+	assert!(user.is_some());
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_sync_disabled_user() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby",
+		"disabled_user@famedly.de",
+		"+12015550124",
+		"disabled_user",
+		true,
+	)
+	.await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel.get_user_by_login_name("disabled_user@famedly.de").await;
+
+	if let Err(error) = user {
+		match error {
+			ZitadelError::TonicResponseError(status)
+				if status.code() == TonicErrorCode::NotFound =>
+			{
+				return;
+			}
+			_ => {
+				panic!("zitadel failed while searching for user: {}", error)
+			}
+		}
+	} else {
+		panic!("disabled user was synced: {:?}", user);
+	}
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_sync_change() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"change@famedly.de",
+		"+12015550124",
+		"change",
+		false,
+	)
+	.await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	ldap.change_user("change", "telephoneNumber", "+12015550123").await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("change@famedly.de")
+		.await
+		.expect("could not query Zitadel users")
+		.expect("missing Zitadel user");
+
+	match user.r#type {
+		Some(Type::Human(user)) => {
+			assert_eq!(user.phone.expect("phone missing").phone, "+12015550123");
+		}
+
+		_ => panic!("human user became a machine user?"),
+	}
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_sync_disable() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"disable@famedly.de",
+		"+12015550124",
+		"disable",
+		false,
+	)
+	.await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	ldap.disable_user("disable").await;
 
 	do_the_thing(config().await.clone()).await.expect("syncing failed");
 
@@ -33,7 +138,7 @@ async fn test_e2e_simple_sync() {
 		.await
 		.expect("could not query Zitadel users");
 
-	assert!(user.is_some());
+	assert!(user.is_none());
 }
 
 struct Ldap {
@@ -81,7 +186,7 @@ impl Ldap {
 
 		self.client
 			.add(
-				&format!("cn={},{}", cn, config().await.ldap.base_dn.as_str()),
+				&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()),
 				vec![
 					("objectClass", HashSet::from(["inetOrgPerson", "shadowAccount"])),
 					("cn", HashSet::from([cn])),
@@ -92,7 +197,7 @@ impl Ldap {
 					("uid", HashSet::from([uid])),
 					(
 						"shadowInactive",
-						HashSet::from([if shadow_inactive { "512" } else { "514" }]),
+						HashSet::from([if shadow_inactive { "514" } else { "512" }]),
 					),
 				],
 			)
@@ -102,6 +207,14 @@ impl Ldap {
 			.expect("failed to create debug user");
 
 		tracing::info!("Successfully added test user");
+	}
+
+	async fn change_user(&self, cn: &str, attribute: &str, value: &str) {
+		todo!()
+	}
+
+	async fn disable_user(&self, cn: &str) {
+		todo!()
 	}
 }
 
