@@ -1,5 +1,5 @@
-FROM ghcr.io/famedly/container-image-rust:main as builder
-ARG PROJECT_NAME=project-name
+FROM ghcr.io/famedly/rust-container:nightly as builder
+ARG PROJECT_NAME=famedly-sync-agent
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=true
 ARG FAMEDLY_CRATES_REGISTRY
 ARG CARGO_HOME
@@ -19,11 +19,11 @@ RUN echo "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config
 
 COPY . /app
 WORKDIR /app
-RUN cargo build --release
+RUN cargo auditable build --release
 
-FROM debian:bullseye-slim
+FROM debian:bookworm-slim
 RUN apt update && apt install ca-certificates -y
 RUN mkdir -p /opt/${PROJECT_NAME}
 WORKDIR /opt/${PROJECT_NAME}
 COPY --from=builder /app/target/release/${PROJECT_NAME} /usr/local/bin/${PROJECT_NAME}
-CMD ["/usr/local/bin/${PROJECT_NAME}"]
+ENTRYPOINT ["/usr/local/bin/${PROJECT_NAME}"]
