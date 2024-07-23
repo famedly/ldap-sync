@@ -22,7 +22,7 @@ while [ $retries -gt 0 ]; do
 	sleep 5
 	retries=$((retries - 1))
 
-	if ldapsearch -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -b "${LDAP_BASE}" 'objectclass=*'; then
+	if ldapsearch -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -b "${LDAP_BASE}" 'objectclass=*' >/dev/null; then
 		break
 	fi
 done
@@ -70,10 +70,16 @@ org_id="$(zitadel_request 'management/v1/orgs/me' GET | jq --raw-output '.org.id
 sed "s/@ORGANIZATION_ID@/$org_id/" /config.sample.yaml > /environment/config.yaml
 
 echo "Deleting LDAP test data"
-ldapdelete -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -r 'ou=testorg,dc=example,dc=org' || true
+ldapdelete -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -r "ou=testorg,${LDAP_BASE}" || true
 
-echo "Add LDAP test organizatino"
+echo "Add LDAP test organization"
 ldapadd -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -f /environment/ldap/testorg.ldif
+
+echo "Current LDAP test org data:"
+ldapsearch -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -b "ou=testorg,${LDAP_BASE}" "objectclass=*"
+
+echo "Current Zitadel org users:"
+zitadel_request management/v1/users/_search POST | jq .result
 
 # Signify that the script has completed
 echo "ready" > /tmp/ready
