@@ -1,5 +1,6 @@
 //! Helper functions for submitting data to Zitadel
 use anyhow::{anyhow, Result};
+use itertools::Itertools;
 use ldap_poller::ldap3::SearchEntry;
 use zitadel_rust_client::{
 	Config as ZitadelConfig, Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile,
@@ -31,107 +32,146 @@ impl Zitadel {
 
 	/// Import a list of new users into Zitadel
 	pub(crate) async fn import_new_users(&self, users: Vec<SearchEntry>) -> Result<()> {
-		let (users, invalid): (
-			Vec<Result<ImportHumanUserRequest>>,
-			Vec<Result<ImportHumanUserRequest>>,
-		) = users
+		let (users, invalid): (Vec<_>, Vec<_>) = users
 			.into_iter()
-			.filter_map(|user| user_from_ldap(&user, &self.config).transpose())
-			.partition(Result::is_ok);
+			.filter_map(|user| {
+				User::try_from_search_entry(user, &self.config)
+					.map(|user| user.enabled.then_some(user))
+					.transpose()
+			})
+			.partition_result();
 
 		if !invalid.is_empty() {
 			let messages = invalid
 				.into_iter()
-				.filter_map(std::result::Result::err)
 				.fold(String::default(), |acc, error| acc + error.to_string().as_str() + "\n");
 
 			tracing::warn!("Some users cannot be synced due to missing attributes:\n{}", messages);
 		}
 
 		for user in users {
-			if let Ok(user) = user {
-				if let Err(error) = self
-					.client
-					.create_human_user(&self.config.famedly.organization_id, user.clone())
-					.await
-				{
-					tracing::error!("Failed to sync user `{}`: {}", user.user_name, error);
-				};
-			} else {
-				tracing::error!(
-					"Hit error in converted user, this should not be possible: {:?}",
-					user
-				);
-			}
+			let user_id = user.ldap_id.clone();
+
+			if let Err(error) = self
+				.client
+				.create_human_user(&self.config.famedly.organization_id, user.into())
+				.await
+			{
+				tracing::error!("Failed to sync user `{}`: {}", user_id, error);
+			};
 		}
 
 		Ok(())
 	}
 }
 
-/// An error arising from a conversion from an ldap search entry to an
-/// ImportHumanUserRequest.
-///
-/// Convert an ldap entry into a user import request
-fn user_from_ldap(entry: &SearchEntry, config: &Config) -> Result<Option<ImportHumanUserRequest>> {
-	/// Read an attribute from the entry
-	fn read_entry(entry: &SearchEntry, attribute: &str) -> Result<String> {
-		entry
-			.attrs
-			.get(attribute)
-			.ok_or(anyhow!("missing attribute `{}` for `{}`", attribute, entry.dn))
-			.and_then(|values| {
-				values.first().ok_or(anyhow!("missing `{}` values for `{}`", attribute, entry.dn))
-			})
-			.cloned()
-	}
+/// Crate-internal representation of a Zitadel/LDAP user
+#[derive(Clone)]
+struct User {
+	/// The user's first name
+	first_name: String,
+	/// The user's last name
+	last_name: String,
+	/// The user's preferred username
+	preferred_username: String,
+	/// The user's email address
+	email: String,
+	/// The user's LDAP ID
+	ldap_id: String,
+	/// The user's phone number
+	phone: String,
+	/// Whether the user is enabled
+	enabled: bool,
 
-	if read_entry(entry, &config.ldap.attributes.status)? == config.ldap.attributes.disable_value {
-		return Ok(None);
-	};
+	/// Whether the user should be prompted to verify their email
+	needs_email_verification: bool,
+	/// Whether the user should be prompted to verify their phone number
+	needs_phone_verification: bool,
+	/// Identity providers to link the user with, if any
+	idps: Vec<Idp>,
+}
 
-	let first_name = read_entry(entry, &config.ldap.attributes.first_name)?;
-	let last_name = read_entry(entry, &config.ldap.attributes.last_name)?;
-	let _preferred_username = read_entry(entry, &config.ldap.attributes.preferred_username)?;
-	let email = read_entry(entry, &config.ldap.attributes.email)?;
-	let user_id = read_entry(entry, &config.ldap.attributes.user_id)?;
-	let phone = read_entry(entry, &config.ldap.attributes.phone)?;
+impl User {
+	/// Construct a user from an LDAP SearchEntry
+	fn try_from_search_entry(entry: SearchEntry, config: &Config) -> Result<Self> {
+		/// Read an attribute from the entry
+		fn read_entry(entry: &SearchEntry, attribute: &str) -> Result<String> {
+			entry
+				.attrs
+				.get(attribute)
+				.ok_or(anyhow!("missing attribute `{}` for `{}`", attribute, entry.dn))
+				.and_then(|values| {
+					values.first().ok_or(anyhow!(
+						"missing `{}` values for `{}`",
+						attribute,
+						entry.dn
+					))
+				})
+				.cloned()
+		}
 
-	let display_name = format!("{last_name}, {first_name}");
+		let enabled = read_entry(&entry, &config.ldap.attributes.status)?
+			!= config.ldap.attributes.disable_value;
+		let first_name = read_entry(&entry, &config.ldap.attributes.first_name)?;
+		let last_name = read_entry(&entry, &config.ldap.attributes.last_name)?;
+		let preferred_username = read_entry(&entry, &config.ldap.attributes.preferred_username)?;
+		let email = read_entry(&entry, &config.ldap.attributes.email)?;
+		let user_id = read_entry(&entry, &config.ldap.attributes.user_id)?;
+		let phone = read_entry(&entry, &config.ldap.attributes.phone)?;
 
-	let idps = if config.feature_flags.contains(&FeatureFlag::SsoLogin) {
-		vec![Idp {
-			config_id: config.famedly.idp_id.clone(),
-			external_user_id: user_id,
-			display_name: display_name.clone(),
-		}]
-	} else {
-		vec![]
-	};
+		let display_name = format!("{last_name}, {first_name}");
 
-	Ok(Some(ImportHumanUserRequest {
-		user_name: email.clone(),
-		profile: Some(Profile {
+		let idps = if config.feature_flags.contains(&FeatureFlag::SsoLogin) {
+			vec![Idp {
+				config_id: config.famedly.idp_id.clone(),
+				external_user_id: user_id.clone(),
+				display_name: display_name.clone(),
+			}]
+		} else {
+			vec![]
+		};
+
+		Ok(Self {
 			first_name,
 			last_name,
-			display_name,
-			gender: Gender::Unspecified.into(), // 0 means "unspecified",
-			nick_name: String::default(),
-			preferred_language: String::default(),
-		}),
-		email: Some(Email {
+			preferred_username,
 			email,
-			is_email_verified: !config.feature_flags.contains(&FeatureFlag::VerifyEmail),
-		}),
-		phone: Some(Phone {
+			ldap_id: user_id,
 			phone,
-			is_phone_verified: !config.feature_flags.contains(&FeatureFlag::VerifyPhone),
-		}),
-		password: String::default(),
-		hashed_password: None,
-		password_change_required: false,
-		request_passwordless_registration: true,
-		otp_code: String::default(),
-		idps,
-	}))
+			enabled,
+			needs_email_verification: config.feature_flags.contains(&FeatureFlag::VerifyEmail),
+			needs_phone_verification: config.feature_flags.contains(&FeatureFlag::VerifyPhone),
+			idps,
+		})
+	}
+}
+
+impl From<User> for ImportHumanUserRequest {
+	fn from(user: User) -> Self {
+		Self {
+			user_name: user.email.clone(),
+			profile: Some(Profile {
+				first_name: user.first_name.clone(),
+				last_name: user.last_name.clone(),
+				display_name: format!("{}, {}", user.last_name, user.first_name),
+				gender: Gender::Unspecified.into(), // 0 means "unspecified",
+				nick_name: String::default(),
+				preferred_language: String::default(),
+			}),
+			email: Some(Email {
+				email: user.email,
+				is_email_verified: !user.needs_email_verification,
+			}),
+			phone: Some(Phone {
+				phone: user.phone,
+				is_phone_verified: !user.needs_phone_verification,
+			}),
+			password: String::default(),
+			hashed_password: None,
+			password_change_required: false,
+			request_passwordless_registration: true,
+			otp_code: String::default(),
+			idps: user.idps,
+		}
+	}
 }

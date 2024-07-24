@@ -8,6 +8,7 @@ publish = false
 [dependencies]
 anyhow = { version = "1.0.81", features = ["backtrace"] }
 bincode = "1.3.3"
+itertools = "0.13.0"
 # error-stack = "0.4.1"
 ldap-poller = { rev = "cc2e8f89c1dc7f1516489f3c1d04c32d8eeb1dbf", git = "ssh://git@github.com/famedly/ldap-poller.git" }
 serde = { version = "1.0.203", features = ["derive"] }
