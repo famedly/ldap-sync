@@ -40,6 +40,32 @@ async fn test_e2e_simple_sync() {
 		.expect("could not query Zitadel users");
 
 	assert!(user.is_some());
+
+	if let Some(user) = user {
+		assert_eq!(user.user_name, "simple@famedly.de");
+
+		if let Some(Type::Human(user)) = user.r#type {
+			let profile = user.profile.expect("user lacks a profile");
+			let phone = user.phone.expect("user lacks a phone number)");
+			let email = user.email.expect("user lacks an email address");
+
+			assert_eq!(profile.first_name, "Bob");
+			assert_eq!(profile.last_name, "Tables");
+			assert_eq!(profile.display_name, "Tables, Bob");
+			assert_eq!(phone.phone, "+12015550123");
+			assert!(phone.is_phone_verified);
+			assert_eq!(email.email, "simple@famedly.de");
+			assert!(email.is_email_verified);
+		} else {
+			panic!("user lacks details");
+		}
+
+		let preferred_username = zitadel
+			.get_user_metadata(None, &user.id, "preferred_username")
+			.await
+			.expect("could not get user metadata");
+		assert_eq!(preferred_username, Some("Bobby".to_owned()));
+	};
 }
 
 #[test(tokio::test)]

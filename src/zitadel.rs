@@ -47,14 +47,26 @@ impl Zitadel {
 		}
 
 		for user in users {
-			let user_id = user.ldap_id.clone();
+			let sync_status: Result<()> = {
+				let new_user_id = self
+					.client
+					.create_human_user(&self.config.famedly.organization_id, user.clone().into())
+					.await?;
 
-			if let Err(error) = self
-				.client
-				.create_human_user(&self.config.famedly.organization_id, user.into())
-				.await
-			{
-				tracing::error!("Failed to sync user `{}`: {}", user_id, error);
+				self.client
+					.set_user_metadata(
+						Some(&self.config.famedly.organization_id),
+						new_user_id,
+						"preferred_username".to_owned(),
+						&user.preferred_username,
+					)
+					.await?;
+
+				Ok(())
+			};
+
+			if let Err(error) = sync_status {
+				tracing::error!("Failed to sync user `{}`: {}", user.ldap_id, error);
 			};
 		}
 
