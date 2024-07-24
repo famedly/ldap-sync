@@ -3,8 +3,7 @@ use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use ldap_poller::ldap3::SearchEntry;
 use zitadel_rust_client::{
-	Config as ZitadelConfig, Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile,
-	Zitadel as ZitadelClient,
+	Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile, Zitadel as ZitadelClient,
 };
 
 use crate::config::{Config, FeatureFlag};
@@ -20,12 +19,10 @@ pub(crate) struct Zitadel {
 impl Zitadel {
 	/// Construct the Zitadel instance
 	pub(crate) async fn new(config: &Config) -> Result<Self> {
-		let zitadel_config =
-			ZitadelConfig::new(config.clone().famedly.url, config.clone().famedly.key_file);
-
-		let client = ZitadelClient::new(&zitadel_config)
-			.await
-			.map_err(|message| anyhow!("failed to configure zitadel client: {}", message))?;
+		let client =
+			ZitadelClient::new(config.famedly.url.clone(), config.famedly.key_file.clone())
+				.await
+				.map_err(|message| anyhow!("failed to configure zitadel client: {}", message))?;
 
 		Ok(Self { client, config: config.clone() })
 	}

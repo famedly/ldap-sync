@@ -7,8 +7,10 @@ use ldap_sync::{do_the_thing, Config};
 use tempfile::TempDir;
 use test_log::test;
 use tokio::sync::OnceCell;
+use uuid::{uuid, Uuid};
 use zitadel_rust_client::{
-	error::Error as ZitadelError, error::TonicErrorCode, Config as ZitadelConfig, Type, Zitadel,
+	error::{Error as ZitadelError, TonicErrorCode},
+	Type, Zitadel,
 };
 
 static CONFIG: OnceCell<Config> = OnceCell::const_new();
@@ -223,9 +225,7 @@ impl Ldap {
 /// Open a connection to the configured Zitadel backend
 async fn open_zitadel_connection() -> Zitadel {
 	let famedly = config().await.famedly.clone();
-	let zitadel_config = ZitadelConfig::new(famedly.url, famedly.key_file);
-
-	Zitadel::new(&zitadel_config).await.expect("failed to set up Zitadel client")
+	Zitadel::new(famedly.url, famedly.key_file).await.expect("failed to set up Zitadel client")
 }
 
 /// Get the module's test environment config
