@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
-use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings};
+use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings, Mod};
 use ldap_sync::{do_the_thing, Config};
 use tempfile::TempDir;
 use test_log::test;
@@ -146,7 +146,7 @@ async fn test_e2e_sync_change() {
 
 	do_the_thing(config().await.clone()).await.expect("syncing failed");
 
-	ldap.change_user("change", "telephoneNumber", "+12015550123").await;
+	ldap.change_user("change", vec![("telephoneNumber", HashSet::from(["+12015550123"]))]).await;
 
 	do_the_thing(config().await.clone()).await.expect("syncing failed");
 
@@ -183,17 +183,14 @@ async fn test_e2e_sync_disable() {
 
 	do_the_thing(config().await.clone()).await.expect("syncing failed");
 
-	ldap.disable_user("disable").await;
+	ldap.change_user("disable", vec![("shadowInactive", HashSet::from(["514"]))]).await;
 
 	do_the_thing(config().await.clone()).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
-	let user = zitadel
-		.get_user_by_login_name("bobby@famedly.de")
-		.await
-		.expect("could not query Zitadel users");
+	let user = zitadel.get_user_by_login_name("disable@famedly.de").await;
 
-	assert!(user.is_none());
+	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
 }
 
 struct Ldap {
@@ -264,12 +261,16 @@ impl Ldap {
 		tracing::info!("Successfully added test user");
 	}
 
-	async fn change_user(&self, cn: &str, attribute: &str, value: &str) {
-		todo!()
-	}
+	async fn change_user(&mut self, uid: &str, changes: Vec<(&str, HashSet<&str>)>) {
+		let mods = changes
+			.into_iter()
+			.map(|(attribute, changes)| Mod::Replace(attribute, changes))
+			.collect();
 
-	async fn disable_user(&self, cn: &str) {
-		todo!()
+		self.client
+			.modify(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()), mods)
+			.await
+			.expect("failed to modify userg");
 	}
 }
 

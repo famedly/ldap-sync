@@ -1,5 +1,5 @@
 //! Helper functions for submitting data to Zitadel
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use itertools::Itertools;
 use ldap_poller::ldap3::SearchEntry;
 use uuid::{uuid, Uuid};
@@ -61,6 +61,59 @@ impl Zitadel {
 			};
 		}
 
+		Ok(())
+	}
+
+	/// Update a list of old/new user maps
+	pub(crate) async fn update_users(&self, users: Vec<(SearchEntry, SearchEntry)>) -> Result<()> {
+		let (users, invalid): (Vec<_>, Vec<anyhow::Error>) = users
+			.into_iter()
+			.map(|(old, new)| {
+				let old = User::try_from_search_entry(old, &self.config)?;
+				let new = User::try_from_search_entry(new, &self.config)?;
+
+				Ok((old, new))
+			})
+			.partition_result();
+
+		if !invalid.is_empty() {
+			let messages = invalid
+				.into_iter()
+				.fold(String::default(), |acc, error| acc + error.to_string().as_str() + "\n");
+
+			tracing::warn!("Some users cannot be updated due to missing attributes:\n{}", messages);
+		}
+
+		let disabled: Vec<User> = users
+			.iter()
+			.filter(|&(old, new)| (old.enabled && !new.enabled))
+			.map(|(_, new)| new.clone())
+			.collect();
+
+		let _enabled: Vec<User> = users
+			.iter()
+			.filter(|(old, new)| (!old.enabled && new.enabled))
+			.map(|(_, new)| new.clone())
+			.collect();
+
+		for user in disabled {
+			let status = self.delete_user(&user).await;
+
+			if let Err(error) = status {
+				tracing::error!("Failed to delete user `{}`: {}`", user.ldap_id, error);
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Delete a Zitadel user
+	async fn delete_user(&self, user: &User) -> Result<()> {
+		if let Some(user_id) = self.client.get_user_by_login_name(&user.email).await? {
+			self.client.remove_user(user_id.id).await?;
+		} else {
+			bail!("could not find user `{}` for deletion", user.email);
+		}
 		Ok(())
 	}
 
