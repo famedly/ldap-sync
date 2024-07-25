@@ -2,11 +2,15 @@
 use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use ldap_poller::ldap3::SearchEntry;
+use uuid::{uuid, Uuid};
 use zitadel_rust_client::{
 	Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile, Zitadel as ZitadelClient,
 };
 
 use crate::config::{Config, FeatureFlag};
+
+/// The Famedly UUID namespace to use to generate v5 UUIDs.
+const FAMEDLY_NAMESPACE: Uuid = uuid!("d9979cff-abee-4666-bc88-1ec45a843fb8");
 
 /// The Zitadel project role to assign to users.
 const FAMEDLY_USER_ROLE: &str = "User";
@@ -73,6 +77,15 @@ impl Zitadel {
 				new_user_id.clone(),
 				"preferred_username".to_owned(),
 				&user.preferred_username,
+			)
+			.await?;
+
+		self.client
+			.set_user_metadata(
+				Some(&self.config.famedly.organization_id),
+				new_user_id.clone(),
+				"localpart".to_owned(),
+				&Uuid::new_v5(&FAMEDLY_NAMESPACE, user.ldap_id.as_bytes()).to_string(),
 			)
 			.await?;
 

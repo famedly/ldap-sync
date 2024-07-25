@@ -70,13 +70,25 @@ async fn test_e2e_simple_sync() {
 			.expect("could not get user metadata");
 		assert_eq!(preferred_username, Some("Bobby".to_owned()));
 
+		let uuid =
+			Uuid::new_v5(&uuid!("d9979cff-abee-4666-bc88-1ec45a843fb8"), "simple".as_bytes());
+
+		let localpart = zitadel
+			.get_user_metadata(
+				Some(config().await.famedly.organization_id.clone()),
+				&user.id,
+				"localpart",
+			)
+			.await
+			.expect("could not get user metadata");
+		assert_eq!(localpart, Some(uuid.to_string()));
+
 		let grants = zitadel
 			.list_user_grants(&config().await.famedly.organization_id, &user.id)
 			.await
 			.expect("failed to get user grants");
 
 		let grant = grants.result.first().expect("no user grants found");
-
 		assert!(grant.role_keys.clone().into_iter().any(|key| key == "User"));
 	};
 }
