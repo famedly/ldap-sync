@@ -8,6 +8,9 @@ use zitadel_rust_client::{
 
 use crate::config::{Config, FeatureFlag};
 
+/// The Zitadel project role to assign to users.
+const FAMEDLY_USER_ROLE: &str = "User";
+
 /// A very high-level Zitadel client
 pub(crate) struct Zitadel {
 	/// The backing Zitadel client
@@ -47,28 +50,41 @@ impl Zitadel {
 		}
 
 		for user in users {
-			let sync_status: Result<()> = {
-				let new_user_id = self
-					.client
-					.create_human_user(&self.config.famedly.organization_id, user.clone().into())
-					.await?;
-
-				self.client
-					.set_user_metadata(
-						Some(&self.config.famedly.organization_id),
-						new_user_id,
-						"preferred_username".to_owned(),
-						&user.preferred_username,
-					)
-					.await?;
-
-				Ok(())
-			};
+			let sync_status = self.import_user(&user).await;
 
 			if let Err(error) = sync_status {
 				tracing::error!("Failed to sync user `{}`: {}", user.ldap_id, error);
 			};
 		}
+
+		Ok(())
+	}
+
+	/// Import a user into Zitadel
+	async fn import_user(&self, user: &User) -> Result<()> {
+		let new_user_id = self
+			.client
+			.create_human_user(&self.config.famedly.organization_id, user.clone().into())
+			.await?;
+
+		self.client
+			.set_user_metadata(
+				Some(&self.config.famedly.organization_id),
+				new_user_id.clone(),
+				"preferred_username".to_owned(),
+				&user.preferred_username,
+			)
+			.await?;
+
+		self.client
+			.add_user_grant(
+				Some(self.config.famedly.organization_id.clone()),
+				new_user_id,
+				self.config.famedly.project_id.clone(),
+				None,
+				vec![FAMEDLY_USER_ROLE.to_owned()],
+			)
+			.await?;
 
 		Ok(())
 	}

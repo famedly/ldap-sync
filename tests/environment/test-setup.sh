@@ -64,10 +64,25 @@ for id in $zitadel_users; do
 	zitadel_request "management/v1/users/$id" DELETE
 done
 
-echo "Updating Zitadel org ID"
+echo "Deleting Zitadel projects"
+projects="$(zitadel_request 'management/v1/projects/_search' POST)"
+# Filter out the ZITADEL project
+projects="$(echo "$projects" | jq --raw-output '.result[]? | select(.name == "ZITADEL" | not) | .id')"
+
+for id in $projects; do
+	echo "Deleting project $id"
+	zitadel_request "management/v1/projects/$id" DELETE
+done
+
+echo "Creating test project"
+project_id="$(zitadel_request 'management/v1/projects' POST --data '{"name": "TestProject"}' | jq --raw-output '.id')"
+zitadel_request "management/v1/projects/$project_id/roles" POST --data '{"roleKey": "User", "displayName": "User"}'
+
+echo "Updating Zitadel IDs"
 org_id="$(zitadel_request 'management/v1/orgs/me' GET | jq --raw-output '.org.id')"
 
 sed "s/@ORGANIZATION_ID@/$org_id/" /config.sample.yaml > /environment/config.yaml
+sed "s/@PROJECT_ID@/$project_id/" -i /environment/config.yaml
 
 echo "Deleting LDAP test data"
 ldapdelete -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -r "ou=testorg,${LDAP_BASE}" || true

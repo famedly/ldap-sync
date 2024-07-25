@@ -24,7 +24,7 @@ famedly:
   url: http://localhost:8080
   key_file: tests/environment/zitadel/service-user.json
   organization_id: @ORGANIZATION_ID@
-  project_id: tbd
+  project_id: @PROJECT_ID@
   idp_id: tbd
 
 feature_flags: []

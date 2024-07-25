@@ -61,10 +61,23 @@ async fn test_e2e_simple_sync() {
 		}
 
 		let preferred_username = zitadel
-			.get_user_metadata(None, &user.id, "preferred_username")
+			.get_user_metadata(
+				Some(config().await.famedly.organization_id.clone()),
+				&user.id,
+				"preferred_username",
+			)
 			.await
 			.expect("could not get user metadata");
 		assert_eq!(preferred_username, Some("Bobby".to_owned()));
+
+		let grants = zitadel
+			.list_user_grants(&config().await.famedly.organization_id, &user.id)
+			.await
+			.expect("failed to get user grants");
+
+		let grant = grants.result.first().expect("no user grants found");
+
+		assert!(grant.role_keys.clone().into_iter().any(|key| key == "User"));
 	};
 }
 
