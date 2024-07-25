@@ -32,11 +32,12 @@ pub async fn do_the_thing(config: Config) -> Result<()> {
 		Ok(())
 	});
 
-	let (added, changed, _removed) = get_user_changes(ldap_receiver).await;
+	let (added, changed, removed) = get_user_changes(ldap_receiver).await;
 	tracing::info!("Finished syncing LDAP data");
 
 	zitadel.import_new_users(added).await?;
 	zitadel.update_users(changed).await?;
+	zitadel.delete_users(removed).await?;
 
 	let _ = sync_handle.await?;
 

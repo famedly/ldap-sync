@@ -86,14 +86,19 @@ impl Zitadel {
 
 		let disabled: Vec<User> = users
 			.iter()
-			.filter(|&(old, new)| (old.enabled && !new.enabled))
+			.filter(|&(old, new)| old.enabled && !new.enabled)
 			.map(|(_, new)| new.clone())
 			.collect();
 
-		let _enabled: Vec<User> = users
+		let enabled: Vec<User> = users
 			.iter()
-			.filter(|(old, new)| (!old.enabled && new.enabled))
+			.filter(|(old, new)| !old.enabled && new.enabled)
 			.map(|(_, new)| new.clone())
+			.collect();
+
+		let changed: Vec<(User, User)> = users
+			.into_iter()
+			.filter(|(old, new)| new.enabled && old.enabled == new.enabled)
 			.collect();
 
 		for user in disabled {
@@ -102,6 +107,60 @@ impl Zitadel {
 			if let Err(error) = status {
 				tracing::error!("Failed to delete user `{}`: {}`", user.ldap_id, error);
 			}
+		}
+
+		for user in enabled {
+			let status = self.import_user(&user).await;
+
+			if let Err(error) = status {
+				tracing::error!("Failed to re-create user `{}`: {}", user.ldap_id, error);
+			}
+		}
+
+		for (old, new) in changed {
+			let status = self.update_user(&old, &new).await;
+
+			if let Err(error) = status {
+				tracing::error!("Failed to update user `{}`: {}", new.ldap_id, error);
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Delete a list of Zitadel users given their IDs
+	pub(crate) async fn delete_users(&self, users: Vec<Vec<u8>>) -> Result<()> {
+		for user in users {
+			let status = self.delete_user_by_id(&user).await;
+
+			if let Err(error) = status {
+				// This is only used for logging, so if the string is
+				// invalid it should be fine
+				let user_id = String::from_utf8_lossy(&user);
+
+				tracing::error!("Failed to delete user `{}`: {}", user_id, error);
+			}
+		}
+
+		Ok(())
+	}
+
+	/// Update a Zitadel user
+	#[allow(clippy::unused_async, unused_variables)]
+	async fn update_user(&self, old: &User, new: &User) -> Result<()> {
+		todo!()
+	}
+
+	/// Delete a Zitadel user given only their LDAP id
+	async fn delete_user_by_id(&self, ldap_id: &[u8]) -> Result<()> {
+		let uid = String::from_utf8(ldap_id.to_vec())?;
+		let user = self
+			.client
+			.get_user_by_nick_name(Some(self.config.famedly.organization_id.clone()), uid.clone())
+			.await?;
+		match user {
+			Some(user) => self.client.remove_user(user.id).await?,
+			None => bail!("Could not find user with ldap uid '{uid}' for deletion"),
 		}
 
 		Ok(())
@@ -246,7 +305,7 @@ impl From<User> for ImportHumanUserRequest {
 				last_name: user.last_name.clone(),
 				display_name: format!("{}, {}", user.last_name, user.first_name),
 				gender: Gender::Unspecified.into(), // 0 means "unspecified",
-				nick_name: String::default(),
+				nick_name: user.ldap_id.clone(),
 				preferred_language: String::default(),
 			}),
 			email: Some(Email {

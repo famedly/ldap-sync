@@ -193,6 +193,36 @@ async fn test_e2e_sync_disable() {
 	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
 }
 
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_sync_deletion() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"bob",
+		"Tables",
+		"Bobby3",
+		"deleted@famedly.de",
+		"+12015550124",
+		"deleted",
+		false,
+	)
+	.await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user =
+		zitadel.get_user_by_login_name("deleted@famedly.de").await.expect("failed to find user");
+	assert!(user.is_some());
+
+	ldap.delete_user("deleted").await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	let user = zitadel.get_user_by_login_name("deleted@famedly.de").await;
+	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
+}
+
 struct Ldap {
 	client: LdapClient,
 }
@@ -270,7 +300,14 @@ impl Ldap {
 		self.client
 			.modify(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()), mods)
 			.await
-			.expect("failed to modify userg");
+			.expect("failed to modify user");
+	}
+
+	async fn delete_user(&mut self, uid: &str) {
+		self.client
+			.delete(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()))
+			.await
+			.expect("failed to delete user");
 	}
 }
 
