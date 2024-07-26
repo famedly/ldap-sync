@@ -195,6 +195,34 @@ async fn test_e2e_sync_disable() {
 
 #[test(tokio::test)]
 #[test_log(default_log_filter = "debug")]
+async fn test_e2e_sync_email_change() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"email_change@famedly.de",
+		"+12015550124",
+		"email_change",
+		false,
+	)
+	.await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	ldap.change_user("email_change", vec![("mail", HashSet::from(["email_changed@famedly.de"]))])
+		.await;
+
+	do_the_thing(config().await.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel.get_user_by_login_name("email_changed@famedly.de").await;
+
+	assert!(user.is_ok());
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
 async fn test_e2e_sync_deletion() {
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
