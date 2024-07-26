@@ -19,6 +19,24 @@ impl Config {
 
 		Ok(self)
 	}
+
+	/// Whether phone verification is enabled
+	#[must_use]
+	pub fn require_phone_verification(&self) -> bool {
+		self.feature_flags.contains(&FeatureFlag::VerifyPhone)
+	}
+
+	/// Whether email verification is enabled
+	#[must_use]
+	pub fn require_email_verification(&self) -> bool {
+		self.feature_flags.contains(&FeatureFlag::VerifyEmail)
+	}
+
+	/// Whether SSO login is enabled
+	#[must_use]
+	pub fn require_sso_login(&self) -> bool {
+		self.feature_flags.contains(&FeatureFlag::SsoLogin)
+	}
 }
 
 /// Validate the famedly URL
@@ -129,14 +147,15 @@ impl From<LdapConfig> for ldap_poller::Config {
 			attributes: AttributeConfig {
 				pid: attributes.user_id,
 				updated: attributes.last_modified,
-				additional: vec![
+				additional: vec![],
+				attrs_to_track: vec![
+					attributes.status,
 					attributes.first_name,
 					attributes.last_name,
 					attributes.preferred_username,
 					attributes.email,
 					attributes.phone,
 				],
-				attrs_to_track: vec![attributes.status],
 			},
 			cache_method: CacheMethod::ModificationTime,
 			check_for_deleted_entries: cfg.check_for_deleted_entries,

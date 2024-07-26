@@ -4,6 +4,7 @@ use itertools::Itertools;
 use ldap_poller::ldap3::SearchEntry;
 use uuid::{uuid, Uuid};
 use zitadel_rust_client::{
+	error::{Error as ZitadelError, TonicErrorCode},
 	Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile, Zitadel as ZitadelClient,
 };
 
@@ -148,7 +149,69 @@ impl Zitadel {
 	/// Update a Zitadel user
 	#[allow(clippy::unused_async, unused_variables)]
 	async fn update_user(&self, old: &User, new: &User) -> Result<()> {
-		todo!()
+		let Some(user_id) = self.get_user_id(old).await? else {
+			bail!("could not find user `{}` to update", old.email);
+		};
+
+		if old.email != new.email {
+			self.client
+				.update_human_user_name(
+					&self.config.famedly.organization_id,
+					user_id.clone(),
+					new.email.clone(),
+				)
+				.await?;
+		};
+
+		if old.first_name != new.first_name || old.last_name != new.last_name {
+			self.client
+				.update_human_user_profile(
+					&self.config.famedly.organization_id,
+					user_id.clone(),
+					new.first_name.clone(),
+					new.last_name.clone(),
+					None,
+					Some(format!("{}, {}", new.last_name, new.first_name)),
+					None,
+					None,
+				)
+				.await?;
+		};
+
+		if old.phone != new.phone {
+			self.client
+				.update_human_user_phone(
+					&self.config.famedly.organization_id,
+					user_id.clone(),
+					new.phone.clone(),
+					!self.config.require_phone_verification(),
+				)
+				.await?;
+		};
+
+		if old.email != new.email {
+			self.client
+				.update_human_user_email(
+					&self.config.famedly.organization_id,
+					user_id.clone(),
+					new.email.clone(),
+					!self.config.require_email_verification(),
+				)
+				.await?;
+		};
+
+		if old.preferred_username != new.preferred_username {
+			self.client
+				.set_user_metadata(
+					Some(&self.config.famedly.organization_id),
+					user_id,
+					"preferred_username".to_owned(),
+					&new.preferred_username,
+				)
+				.await?;
+		};
+
+		Ok(())
 	}
 
 	/// Delete a Zitadel user given only their LDAP id
@@ -166,10 +229,24 @@ impl Zitadel {
 		Ok(())
 	}
 
+	/// Retrieve the Zitadel user ID of a user, or None if the user
+	/// cannot be found
+	async fn get_user_id(&self, user: &User) -> Result<Option<String>> {
+		let status = self.client.get_user_by_login_name(&user.email).await;
+
+		if let Err(ZitadelError::TonicResponseError(ref error)) = status {
+			if error.code() == TonicErrorCode::NotFound {
+				return Ok(None);
+			}
+		}
+
+		Ok(status.map(|user| user.map(|u| u.id))?)
+	}
+
 	/// Delete a Zitadel user
 	async fn delete_user(&self, user: &User) -> Result<()> {
-		if let Some(user_id) = self.client.get_user_by_login_name(&user.email).await? {
-			self.client.remove_user(user_id.id).await?;
+		if let Some(user_id) = self.get_user_id(user).await? {
+			self.client.remove_user(user_id).await?;
 		} else {
 			bail!("could not find user `{}` for deletion", user.email);
 		}

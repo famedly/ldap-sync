@@ -55,8 +55,14 @@ async fn get_user_changes(
 					tracing::debug!("New entry: {:?}", entry);
 					added.push(entry);
 				}
-				EntryStatus::Changed { old, new } => changed.push((old, new)),
-				EntryStatus::Removed(entry) => removed.push(entry),
+				EntryStatus::Changed { old, new } => {
+					tracing::debug!("Changes found for {:?} -> {:?}", old, new);
+					changed.push((old, new));
+				}
+				EntryStatus::Removed(entry) => {
+					tracing::debug!("Deleted user {}", String::from_utf8_lossy(&entry));
+					removed.push(entry);
+				}
 			};
 			(added, changed, removed)
 		})
