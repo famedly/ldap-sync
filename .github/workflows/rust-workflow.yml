@@ -1,4 +1,4 @@
-name: Rust
+name: Rust workflow
 
 # Trigger the CI on any tags, pushes to any branch and PRs to any branch.
 on:
@@ -8,17 +8,127 @@ on:
   pull_request:
     branches: [ "*" ]
 
+env:
+  CARGO_TERM_COLOR: always
+  ADDITIONAL_PACKAGES: ""
+
 # Make sure there is no pipeline running uselessly.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Environment variables for all jobs.
-env:
-  CARGO_TERM_COLOR: always
-
 # Defined CI jobs.
 jobs:
-  check:
-    uses: famedly/backend-build-workflows/.github/workflows/rust-workflow.yml@main
-    secrets: inherit
+  simple-checks:
+    container: ghcr.io/famedly/rust-container:nightly
+    # This is set explictly to allow Meow-Coverage to post comments in response to Dependabot PRs which have a read-only GITHUB_TOKEN by default
+    permissions:
+      pull-requests: write
+      issues: write
+      contents: read
+    runs-on: ubuntu-latest-16core
+    steps:
+    - name: Checkout current repository
+      uses: actions/checkout@v3
+      with:
+        path: head
+
+    - uses: famedly/backend-build-workflows/.github/actions/rust-prepare@main
+      with:
+        gitlab_ssh: ${{ secrets.CI_SSH_PRIVATE_KEY}}
+        gitlab_user: ${{ secrets.GITLAB_USER }}
+        gitlab_pass: ${{ secrets.GITLAB_PASS }}
+
+    - name: Caching
+      uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
+      with:
+        workspaces: "head -> target"
+
+    - name: Rustfmt
+      shell: bash
+      working-directory: head
+      run: cargo +${NIGHTLY_VERSION} fmt -- --check
+
+    - name: Clippy
+      working-directory: head
+      shell: bash
+      run: cargo +${NIGHTLY_VERSION} clippy --workspace --all-targets -- -D warnings
+
+    - name: Doc-test
+      shell: bash
+      working-directory: head
+      run: cargo +${NIGHTLY_VERSION} test --doc --workspace --verbose
+
+    - name: Udeps
+      shell: bash
+      working-directory: head
+      run: cargo +${NIGHTLY_VERSION} udeps
+
+    - name: Typos
+      shell: bash
+      working-directory: head
+      run: typos --exclude '*.key' --exclude '*.crt' --exclude '*.csr' --exclude '*.srl'
+
+  tests:
+    runs-on: ubuntu-latest-16core
+    steps:
+    - name: Checkout current repository
+      uses: actions/checkout@v3
+      with:
+        path: head
+
+    - uses: famedly/backend-build-workflows/.github/actions/rust-prepare@main
+      with:
+        gitlab_ssh: ${{ secrets.CI_SSH_PRIVATE_KEY}}
+        gitlab_user: ${{ secrets.GITLAB_USER }}
+        gitlab_pass: ${{ secrets.GITLAB_PASS }}
+
+    - name: Install additional cargo tooling
+      shell: bash
+      run: cargo install cargo-llvm-cov cargo-nextest --locked
+
+    - name: Caching
+      uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
+      with:
+        workspaces: "head -> target"
+
+    - name: Test & Coverage
+      timeout-minutes: 20
+      shell: bash
+      working-directory: head
+      run: cargo llvm-cov nextest --no-fail-fast --workspace --lcov --output-path $GITHUB_WORKSPACE/new-cov.lcov
+
+    - name: Load base coverage results from cache
+      if: github.event_name == 'pull_request'
+      id: cache-coverage
+      uses: actions/cache@v3
+      with:
+        path: ./old-cov.lcov
+        key: coverage-${{ github.event.pull_request.base.sha }}
+
+    - name: Pull base
+      uses: actions/checkout@v3
+      if: github.event_name == 'pull_request' && steps.cache-coverage.outputs.cache-hit != 'true'
+      with:
+        ref: ${{ github.event.pull_request.base.ref }}
+        repository: ${{ github.event.pull_request.base.full_name }}
+        path: base
+
+    - name: Generate base coverage
+      if: github.event_name == 'pull_request' && steps.cache-coverage.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: base
+      run: cargo llvm-cov nextest --workspace --lcov --output-path $GITHUB_WORKSPACE/old-cov.lcov
+
+    - name: Meow Coverage
+      id: coverage-report
+      uses: famedly/meow-coverage@main
+      if: github.event_name == 'pull_request'
+      with:
+        new-lcov-file: 'new-cov.lcov'
+        old-lcov-file: ${{ github.event_name == 'pull_request' && 'old-cov.lcov' || '' }}
+        source-prefix: 'src/'
+        pr-number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}
+        repo-name: ${{ github.repository }}
+        commit-id: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event.after }}
+        github-token: ${{ secrets.GITHUB_TOKEN }}
