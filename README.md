@@ -2,6 +2,47 @@
 
 Sync LDAP/AD users with Zitadel.
 
+## Testing & Development
+
+This repository uses [`nextest`](https://nexte.st/) to perform test
+env spin-up and teardown. To install it, either see their website, or
+run:
+
+```
+cargo install cargo-nextest --locked
+```
+
+Tests can then be run using:
+
+```
+cargo nextest run [--no-fail-fast] [-E 'test(<specific_test_to_run>)']
+```
+
+In addition, a modern docker with the `compose` subcommand is
+required - importantly, this is not true for many distro docker
+packages. Firewalls also need to be configured to allow container <->
+container as well as container <-> host communication.
+
+### E2E test architecture
+
+For e2e testing, we need an ldap and a zitadel instance to test
+against. These are spun up using docker compose.
+
+After ldap and zitadel have spun up, another docker container runs,
+which simply executes a script to clean up existing test data and
+create the necessary pre-setup organization structures to support a
+test run.
+
+Tests are then expected to directly communicate with ldap/zitadel to
+create/delete/modify users and confirm test results.
+
+Importantly, since the tests run with no teardown between individual
+tests, users created *must* have different LDAP ID/email addresses, so
+that they can be managed independently.
+
+E2E tests cannot run concurrently, since this would cause
+synchronization to happen concurrently.
+
 ## Quirks & Edge Cases
 
 - Changing a user's LDAP id (the attribute from the `user_id` setting)
