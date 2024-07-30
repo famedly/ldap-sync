@@ -43,6 +43,11 @@ that they can be managed independently.
 E2E tests cannot run concurrently, since this would cause
 synchronization to happen concurrently.
 
+For LDAP-over-TLS, openldap is configured to allow connections without
+client certificates, but if one is provided, it must be verified
+correctly. This allows us to test scenarios with and without client
+certificates.
+
 ## Quirks & Edge Cases
 
 - Changing a user's LDAP id (the attribute from the `user_id` setting)
