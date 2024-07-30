@@ -10,7 +10,7 @@ anyhow = { version = "1.0.81", features = ["backtrace"] }
 bincode = "1.3.3"
 itertools = "0.13.0"
 # error-stack = "0.4.1"
-ldap-poller = { rev = "cc2e8f89c1dc7f1516489f3c1d04c32d8eeb1dbf", git = "ssh://git@github.com/famedly/ldap-poller.git" }
+ldap-poller = { git = "ssh://git@github.com/famedly/ldap-poller.git", branch = "egraven/native-tls", version = "0.1.0" }
 serde = { version = "1.0.203", features = ["derive"] }
 serde_yaml = "0.9.34"
 tokio = { version = "1.35.1", features = ["macros", "rt-multi-thread", "sync", "time", "fs", "rt"] }
@@ -115,6 +115,6 @@ useless_let_if_seq = "warn"
 verbose_file_reads = "warn"
 
 [dev-dependencies]
-ldap3 = { version = "0.11.1", default-features = false, features = ["tls-rustls"] }
+ldap3 = { version = "0.11.1", default-features = false, features = ["tls-native"] }
 tempfile = "3.10.1"
 test-log = { version = "0.2.16", features = ["trace", "unstable"] }

@@ -96,12 +96,6 @@ pub struct Config {
 pub struct LdapConfig {
 	/// The URL of the LDAP/AD server
 	pub url: Url,
-	/// Enable StartTLS for secure communication
-	pub start_tls: bool,
-	/// Whether to disable tls verification
-	pub no_tls_verify: bool,
-	/// Path to the root certificates
-	pub root_certificates_path: Option<PathBuf>,
 	/// The base DN for searching users
 	pub base_dn: String,
 	/// The DN to bind for authentication
@@ -121,6 +115,8 @@ pub struct LdapConfig {
 	pub attributes: LdapAttributesMapping,
 	/// Whether to update deleted entries
 	pub check_for_deleted_entries: bool,
+	/// TLS-related configuration
+	pub tls: LdapTlsConfig,
 }
 
 impl From<LdapConfig> for ldap_poller::Config {
@@ -132,9 +128,11 @@ impl From<LdapConfig> for ldap_poller::Config {
 				timeout: cfg.timeout,
 				operation_timeout: std::time::Duration::from_secs(cfg.timeout),
 				tls: TLSConfig {
-					starttls: cfg.start_tls,
-					no_tls_verify: cfg.no_tls_verify,
-					root_certificates_path: cfg.root_certificates_path,
+					starttls: cfg.tls.danger_use_start_tls,
+					no_tls_verify: cfg.tls.danger_disable_tls_verify,
+					root_certificates_path: cfg.tls.server_certificate,
+					client_key_path: cfg.tls.client_key,
+					client_certificate_path: cfg.tls.client_certificate,
 				},
 			},
 			search_user: cfg.bind_dn,
@@ -187,6 +185,36 @@ pub struct LdapAttributesMapping {
 	pub disable_value: String,
 	/// Last modified
 	pub last_modified: Option<String>,
+}
+
+/// The LDAP TLS configuration
+#[derive(Debug, Clone, Deserialize)]
+pub struct LdapTlsConfig {
+	/// Path to the client key; if not specified, it will be assumed
+	/// that the server is configured not to verify client
+	/// certificates.
+	pub client_key: Option<PathBuf>,
+	/// Path to the client certificate; if not specified, it will be
+	/// assumed that the server is configured not to verify client
+	/// certificates.
+	pub client_certificate: Option<PathBuf>,
+	/// Path to the server certificate; if not specified, the host's
+	/// CA will be used to verify the server.
+	pub server_certificate: Option<PathBuf>,
+	/// Whether to verify the server's certificates.
+	///
+	/// This should normally only be used in test environments, as
+	/// disabling certificate validation defies the purpose of using
+	/// TLS in the first place.
+	#[serde(default)]
+	pub danger_disable_tls_verify: bool,
+	/// Enable StartTLS, i.e., use the non-TLS ldap port, but send a
+	/// special message to upgrade the connection to TLS.
+	///
+	/// This is less secure than standard TLS, an `ldaps` URL should
+	/// be preferred.
+	#[serde(default)]
+	pub danger_use_start_tls: bool,
 }
 
 /// Configuration related to Famedly Zitadel

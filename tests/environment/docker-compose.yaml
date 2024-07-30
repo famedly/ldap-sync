@@ -6,9 +6,10 @@ services:
       - 1636:1636
     environment:
       - LDAP_ENABLE_TLS=yes
-      - LDAP_TLS_CERT_FILE=/certs/test-ldap.crt
-      - LDAP_TLS_KEY_FILE=/certs/test-ldap.key
-      - LDAP_TLS_CA_FILE=/certs/test-ldap-ca.crt
+      - LDAP_TLS_CERT_FILE=/certs/server.crt
+      - LDAP_TLS_KEY_FILE=/certs/server.key
+      - LDAP_TLS_CA_FILE=/certs/ca.crt
+      - LDAP_TLS_VERIFY_CLIENTS=try
     volumes:
       - type: bind
         source: ./certs
