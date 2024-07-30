@@ -7,6 +7,7 @@ use ldap_sync::{sync_ldap_users_to_zitadel, Config};
 use tempfile::TempDir;
 use test_log::test;
 use tokio::sync::OnceCell;
+use url::Url;
 use uuid::{uuid, Uuid};
 use zitadel_rust_client::{
 	error::{Error as ZitadelError, TonicErrorCode},
@@ -251,6 +252,56 @@ async fn test_e2e_sync_deletion() {
 	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
 }
 
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_ldaps() {
+	let mut config = config().await.clone();
+	config.ldap.url = Url::parse("ldaps://localhost:1636").expect("invalid ldaps url");
+
+	let mut ldap = Ldap::new().await;
+	ldap.create_user("Bob", "Tables", "Bobby", "tls@famedly.de", "+12015550123", "tls", false)
+		.await;
+
+	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("tls@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+
+	assert!(user.is_some());
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_ldaps_starttls() {
+	let mut config = config().await.clone();
+	config.ldap.tls.danger_use_start_tls = true;
+
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby",
+		"starttls@famedly.de",
+		"+12015550123",
+		"starttls",
+		false,
+	)
+	.await;
+
+	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("starttls@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+
+	assert!(user.is_some());
+}
+
 struct Ldap {
 	client: LdapClient,
 }
@@ -261,11 +312,7 @@ impl Ldap {
 		let mut settings = LdapConnSettings::new();
 
 		settings = settings.set_conn_timeout(Duration::from_secs(config.ldap.timeout));
-		settings = settings.set_starttls(config.ldap.start_tls);
-		// We assume that the test instances aren't spoofing certificates
-		// or anything - asserting tls verification works is up to the
-		// tests, not the setup helper.
-		settings = settings.set_no_tls_verify(true);
+		settings = settings.set_starttls(false);
 
 		let (conn, mut ldap) = LdapConnAsync::from_url_with_settings(settings, &config.ldap.url)
 			.await

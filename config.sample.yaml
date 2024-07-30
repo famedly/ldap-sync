@@ -1,8 +1,5 @@
 ldap:
   url: ldap://localhost:1389
-  start_tls: false
-  no_tls_verify: true
-  # root_certificates_path: ./tests/environment/certs/test-ldap.crt
   base_dn: ou=testorg,dc=example,dc=org
   bind_dn: cn=admin,dc=example,dc=org
   bind_password: adminpassword
@@ -19,6 +16,19 @@ ldap:
     status: "shadowInactive"          # objectClass: shadowAccount
     enable_value: 512
     disable_value: 514
+
+  tls:
+    client_key: ./tests/environment/certs/client.key
+    client_certificate: ./tests/environment/certs/client.crt
+    server_certificate: ./tests/environment/certs/server.crt
+    # Disable server TLS certificate validation
+    danger_disable_tls_verify: false
+    # Use STARTTLS to perform the connection; this is less secure than
+    # using ldaps, but the only option for some servers.
+    #
+    # If you just want to enable TLS, use an `ldaps` URL, and the port
+    # on which the ldap server hosts TLS, instead.
+    danger_use_start_tls: false
 
 famedly:
   url: http://localhost:8080
