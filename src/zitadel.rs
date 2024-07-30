@@ -161,6 +161,8 @@ impl Zitadel {
 					new.email.clone(),
 				)
 				.await?;
+
+			tracing::warn!("User email/login changed for {} -> {}", old.email, new.email);
 		};
 
 		if old.first_name != new.first_name || old.last_name != new.last_name {
@@ -211,6 +213,8 @@ impl Zitadel {
 				.await?;
 		};
 
+		tracing::info!("Successfully updated user {}", old.email);
+
 		Ok(())
 	}
 
@@ -225,6 +229,8 @@ impl Zitadel {
 			Some(user) => self.client.remove_user(user.id).await?,
 			None => bail!("Could not find user with ldap uid '{uid}' for deletion"),
 		}
+
+		tracing::info!("Successfully deleted user {}", String::from_utf8_lossy(ldap_id));
 
 		Ok(())
 	}
@@ -250,6 +256,9 @@ impl Zitadel {
 		} else {
 			bail!("could not find user `{}` for deletion", user.email);
 		}
+
+		tracing::info!("Successfully deleted user {}", user.email);
+
 		Ok(())
 	}
 
@@ -287,6 +296,8 @@ impl Zitadel {
 				vec![FAMEDLY_USER_ROLE.to_owned()],
 			)
 			.await?;
+
+		tracing::info!("Successfully imported user {}", user.email);
 
 		Ok(())
 	}
