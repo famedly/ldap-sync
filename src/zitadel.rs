@@ -171,7 +171,7 @@ impl Zitadel {
 					new.first_name.clone(),
 					new.last_name.clone(),
 					None,
-					Some(format!("{}, {}", new.last_name, new.first_name)),
+					Some(new.get_display_name()),
 					None,
 					None,
 				)
@@ -314,11 +314,29 @@ struct User {
 	needs_email_verification: bool,
 	/// Whether the user should be prompted to verify their phone number
 	needs_phone_verification: bool,
-	/// Identity providers to link the user with, if any
-	idps: Vec<Idp>,
+	/// The ID of the identity provider to link with, if any
+	idp_id: Option<String>,
 }
 
 impl User {
+	/// Get a display name for the user
+	fn get_display_name(&self) -> String {
+		format!("{}, {}", self.last_name, self.first_name)
+	}
+
+	/// Get idp link as required by Zitadel
+	fn get_idps(&self) -> Vec<Idp> {
+		if let Some(idp_id) = self.idp_id.clone() {
+			vec![Idp {
+				config_id: idp_id,
+				external_user_id: self.ldap_id.clone(),
+				display_name: self.get_display_name(),
+			}]
+		} else {
+			vec![]
+		}
+	}
+
 	/// Construct a user from an LDAP SearchEntry
 	fn try_from_search_entry(entry: SearchEntry, config: &Config) -> Result<Self> {
 		/// Read an attribute from the entry
@@ -346,18 +364,6 @@ impl User {
 		let user_id = read_entry(&entry, &config.ldap.attributes.user_id)?;
 		let phone = read_entry(&entry, &config.ldap.attributes.phone)?;
 
-		let display_name = format!("{last_name}, {first_name}");
-
-		let idps = if config.feature_flags.contains(&FeatureFlag::SsoLogin) {
-			vec![Idp {
-				config_id: config.famedly.idp_id.clone(),
-				external_user_id: user_id.clone(),
-				display_name: display_name.clone(),
-			}]
-		} else {
-			vec![]
-		};
-
 		Ok(Self {
 			first_name,
 			last_name,
@@ -368,7 +374,10 @@ impl User {
 			enabled,
 			needs_email_verification: config.feature_flags.contains(&FeatureFlag::VerifyEmail),
 			needs_phone_verification: config.feature_flags.contains(&FeatureFlag::VerifyPhone),
-			idps,
+			idp_id: config
+				.feature_flags
+				.contains(&FeatureFlag::SsoLogin)
+				.then(|| config.famedly.idp_id.clone()),
 		})
 	}
 }
@@ -380,17 +389,17 @@ impl From<User> for ImportHumanUserRequest {
 			profile: Some(Profile {
 				first_name: user.first_name.clone(),
 				last_name: user.last_name.clone(),
-				display_name: format!("{}, {}", user.last_name, user.first_name),
+				display_name: user.get_display_name(),
 				gender: Gender::Unspecified.into(), // 0 means "unspecified",
 				nick_name: user.ldap_id.clone(),
 				preferred_language: String::default(),
 			}),
 			email: Some(Email {
-				email: user.email,
+				email: user.email.clone(),
 				is_email_verified: !user.needs_email_verification,
 			}),
 			phone: Some(Phone {
-				phone: user.phone,
+				phone: user.phone.clone(),
 				is_phone_verified: !user.needs_phone_verification,
 			}),
 			password: String::default(),
@@ -398,7 +407,7 @@ impl From<User> for ImportHumanUserRequest {
 			password_change_required: false,
 			request_passwordless_registration: true,
 			otp_code: String::default(),
-			idps: user.idps,
+			idps: user.get_idps(),
 		}
 	}
 }
