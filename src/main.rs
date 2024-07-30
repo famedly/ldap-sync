@@ -2,12 +2,12 @@
 use std::{path::Path, process::ExitCode, str::FromStr};
 
 use anyhow::Context;
-use ldap_sync::{do_the_thing, Config};
+use ldap_sync::{sync_ldap_users_to_zitadel, Config};
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
 async fn main() -> ExitCode {
-	match read_the_config_and_do_the_thing().await {
+	match run_sync().await {
 		Ok(_) => ExitCode::SUCCESS,
 		Err(e) => {
 			tracing::error!("{}", e);
@@ -17,7 +17,7 @@ async fn main() -> ExitCode {
 }
 
 /// Simple entrypoint without any bells or whistles
-async fn read_the_config_and_do_the_thing() -> anyhow::Result<()> {
+async fn run_sync() -> anyhow::Result<()> {
 	let config = Config::from_file(Path::new(
 		std::env::var("FAMEDLY_LDAP_SYNC_CONFIG").unwrap_or("config.yaml".into()).as_str(),
 	))
@@ -33,5 +33,5 @@ async fn read_the_config_and_do_the_thing() -> anyhow::Result<()> {
 		.finish();
 	tracing::subscriber::set_global_default(subscriber)
 		.context("Setting default tracing subscriber failed")?;
-	do_the_thing(config).await
+	sync_ldap_users_to_zitadel(config).await
 }

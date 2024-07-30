@@ -14,7 +14,7 @@ pub use config::Config;
 use zitadel::Zitadel;
 
 /// Run the sync
-pub async fn do_the_thing(config: Config) -> Result<()> {
+pub async fn sync_ldap_users_to_zitadel(config: Config) -> Result<()> {
 	let cache = read_cache(&config.cache_path).await?;
 	let zitadel = Zitadel::new(&config).await?;
 	let (mut ldap_client, ldap_receiver) = Ldap::new(config.clone().ldap.into(), cache);
