@@ -26,4 +26,5 @@ RUN apt update && apt install ca-certificates -y
 RUN mkdir -p /opt/${PROJECT_NAME}
 WORKDIR /opt/${PROJECT_NAME}
 COPY --from=builder /app/target/release/${PROJECT_NAME} /usr/local/bin/${PROJECT_NAME}
-ENTRYPOINT ["/usr/local/bin/${PROJECT_NAME}"]
+ENV FAMEDLY_LDAP_SYNC_CONFIG="/opt/config.yaml"
+ENTRYPOINT ["/usr/local/bin/ldap-sync"]

@@ -2,6 +2,57 @@
 
 Sync LDAP/AD users with Zitadel.
 
+## Usage
+
+The easiest way to deploy this tool is using our published docker
+container through our [composefile](./docker-compose.yaml).
+
+To prepare for use, we need to provide a handful of files in an `opt`
+directory in the directory where `docker compose` will be
+executed. This is the expected directory structure of the sample
+configuration file:
+
+```
+opt
+├── certs
+│  └── test-ldap.crt   # The TLS certificate of the LDAP server
+├── config.yaml        # An example can be found in config.sample.yaml
+└── service-user.json  # Provided by famedly
+```
+
+Once this is in place, the container can be executed in the parent
+directory of `opt` with:
+
+```
+docker compose up
+```
+
+Or alternatively, without `docker compose`:
+
+```
+docker run --rm -it --network host --volume ./opt:/opt docker-oss.nexus.famedly.de/famedly-sync-agent:latest
+```
+
+## Quirks & Edge Cases
+
+- Changing a user's LDAP id (the attribute from the `user_id` setting)
+  is unsupported, as this is used to identify the user on the Zitadel
+  end.
+- Disabling a user on the LDAP side (with `status`) results in the
+  user being deleted from Zitadel.
+- Providing multiple values for an LDAP attribute is not supported.
+- Zitadel's API is not fully atomic; if a request fails, a user may
+  not be fully created and still not be functional even if the tool is
+  re-used.
+  - In particular, the matrix localpart, the preferred user name, and
+    whether the user has permissions to use Famedly may not be synced.
+- If a user's email or phone number changes, they will only be
+  prompted to verify it if the tool is configured to make users verify
+  them.
+- Changing a user's email also immediately results in a new
+  login/username.
+- If SSO is turned on later, existing users will not be linked.
+
 ## Testing & Development
 
 This repository uses [`nextest`](https://nexte.st/) to perform test
@@ -48,41 +99,7 @@ client certificates, but if one is provided, it must be verified
 correctly. This allows us to test scenarios with and without client
 certificates.
 
-## Quirks & Edge Cases
-
-- Changing a user's LDAP id (the attribute from the `user_id` setting)
-  is unsupported, as this is used to identify the user on the Zitadel
-  end.
-- Disabling a user on the LDAP side (with `status`) results in the
-  user being deleted from Zitadel.
-- Providing multiple values for an LDAP attribute is not supported.
-- Zitadel's API is not fully atomic; if a request fails, a user may
-  not be fully created and still not be functional even if the tool is
-  re-used.
-  - In particular, the matrix localpart, the preferred user name, and
-    whether the user has permissions to use Famedly may not be synced.
-- If a user's email or phone number changes, they will only be
-  prompted to verify it if the tool is configured to make users verify
-  them.
-- Changing a user's email also immediately results in a new
-  login/username.
-- If SSO is turned on later, existing users will not be linked.
-
-[![rust workflow status][badge-rust-workflow-img]][badge-rust-workflow-url]
-[![docker workflow status][badge-docker-workflow-img]][badge-docker-workflow-url]
-
-[badge-rust-workflow-img]: https://github.com/famedly/rust-project-template/actions/workflows/rust.yml/badge.svg
-[badge-rust-workflow-url]: https://github.com/famedly/rust-project-template/commits/main
-[badge-docker-workflow-img]: https://github.com/famedly/rust-project-template/actions/workflows/docker.yml/badge.svg
-[badge-docker-workflow-url]: https://github.com/famedly/rust-project-template/commits/main
-
-Short description of the project.
-
-## Getting Started
-
-Instructions of how to get the project running.
-
-## Pre-commit usage
+### Pre-commit usage
 
 1. If not installed, install with your package manager, or `pip install --user pre-commit`
 2. Run `pre-commit autoupdate` to update the pre-commit config to use the newest template
