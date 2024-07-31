@@ -26,8 +26,8 @@ services:
         source: ./
         target: /environment
       - type: bind
-        source: ../../config.sample.yaml
-        target: /config.sample.yaml
+        source: ./config.template.yaml
+        target: /config.template.yaml
         read_only: true
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/ready"]

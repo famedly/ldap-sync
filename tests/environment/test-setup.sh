@@ -81,7 +81,7 @@ zitadel_request "management/v1/projects/$project_id/roles" POST --data '{"roleKe
 echo "Updating Zitadel IDs"
 org_id="$(zitadel_request 'management/v1/orgs/me' GET | jq --raw-output '.org.id')"
 
-sed "s/@ORGANIZATION_ID@/$org_id/" /config.sample.yaml > /environment/config.yaml
+sed "s/@ORGANIZATION_ID@/$org_id/" /config.template.yaml > /environment/config.yaml
 sed "s/@PROJECT_ID@/$project_id/" -i /environment/config.yaml
 
 echo "Deleting LDAP test data"

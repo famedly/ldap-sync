@@ -1,0 +1,34 @@
+ldap:
+  url: ldap://localhost:1389
+  base_dn: ou=testorg,dc=example,dc=org
+  bind_dn: cn=admin,dc=example,dc=org
+  bind_password: adminpassword
+  user_filter: "(objectClass=shadowAccount)"
+  timeout: 5
+  check_for_deleted_entries: true
+  attributes:
+    first_name: "cn"                  # objectClass: person
+    last_name: "sn"                   # objectClass: person
+    preferred_username: "displayName" # objectClass: inetOrgPerson
+    email: "mail"                     # objectClass: inetOrgPerson
+    phone: "telephoneNumber"          # objectClass: person
+    user_id: "uid"
+    status: "shadowInactive"          # objectClass: shadowAccount
+    enable_value: 512
+    disable_value: 514
+  tls:
+    client_key: ./tests/environment/certs/client.key
+    client_certificate: ./tests/environment/certs/client.crt
+    server_certificate: ./tests/environment/certs/server.crt
+    danger_disable_tls_verify: false
+    danger_use_start_tls: false
+
+famedly:
+  url: http://localhost:8080
+  key_file: tests/environment/zitadel/service-user.json
+  organization_id: @ORGANIZATION_ID@
+  project_id: @PROJECT_ID@
+  idp_id: tbd
+
+feature_flags: []
+cache_path: ./test
