@@ -17,11 +17,22 @@ async fn main() -> ExitCode {
 }
 
 /// Simple entrypoint without any bells or whistles
+#[allow(clippy::print_stderr)]
 async fn run_sync() -> anyhow::Result<()> {
-	let config = Config::from_file(Path::new(
-		std::env::var("FAMEDLY_LDAP_SYNC_CONFIG").unwrap_or("config.yaml".into()).as_str(),
-	))
-	.await?;
+	let config = {
+		let config_path = std::env::var("FAMEDLY_LDAP_SYNC_CONFIG").unwrap_or("config.yaml".into());
+		let config_path = Path::new(&config_path);
+
+		match Config::from_file(config_path).await {
+			Ok(config) => config,
+			Err(error) => {
+				// Tracing subscriber is not yet configured, so we
+				// need to manually log this
+				eprintln!("Failed to load config file from {:?}: {}", config_path, error);
+				anyhow::bail!(error);
+			}
+		}
+	};
 
 	let subscriber = tracing_subscriber::FmtSubscriber::builder()
 		.with_max_level(
