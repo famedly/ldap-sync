@@ -29,11 +29,13 @@ ldap:
     last_name: "sn"
     preferred_username: "displayName"
     email: "mail"
-    phone: "telephoneNumber"
     user_id: "uid"
     status: "shadowInactive"
     enable_value: 512
     disable_value: 514
+    # Phone numbers are the only optional attribute, if a user does
+    # not have a phone number this will be silently ignored
+    phone: "telephoneNumber"
 
   tls:
     # The client TLS key/certificate. If both this and the certificate

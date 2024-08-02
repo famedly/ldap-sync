@@ -19,7 +19,7 @@ tracing = "0.1.40"
 tracing-subscriber = "0.3.18"
 url = "2.5.2"
 uuid = { version = "1.10.0", features = ["v5"] }
-zitadel-rust-client = { git = "ssh://git@github.com/famedly/zitadel-rust-client.git", version = "0.1.0", branch = "tlater/public-config" }
+zitadel-rust-client = { git = "ssh://git@github.com/famedly/zitadel-rust-client.git", version = "0.1.0" }
 
 [build-dependencies]
 vergen = { version = "8.2.6", features = ["git", "gitcl", "build"] } # vergen passes metadata like the version and git commit hash to cargo as a compile-time environment variables

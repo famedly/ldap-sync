@@ -3305,7 +3305,7 @@ dependencies = [
 [[package]]
 name = "zitadel-rust-client"
 version = "0.1.0"
-source = "git+ssh://git@github.com/famedly/zitadel-rust-client.git?branch=tlater/public-config#2d6bf86224208cd7cc331b2862788726db5e1957"
+source = "git+ssh://git@github.com/famedly/zitadel-rust-client.git#e2f507076b6062cab48387852c55e99eb7d7ec31"
 dependencies = [
  "headers",
  "hyper",

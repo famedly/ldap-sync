@@ -180,15 +180,23 @@ impl Zitadel {
 				.await?;
 		};
 
-		if old.phone != new.phone {
-			self.client
-				.update_human_user_phone(
-					&self.config.famedly.organization_id,
-					user_id.clone(),
-					new.phone.clone(),
-					!self.config.require_phone_verification(),
-				)
-				.await?;
+		match (&old.phone, &new.phone) {
+			(Some(_), None) => {
+				self.client
+					.remove_human_user_phone(&self.config.famedly.organization_id, user_id.clone())
+					.await?;
+			}
+			(_, Some(new_phone)) => {
+				self.client
+					.update_human_user_phone(
+						&self.config.famedly.organization_id,
+						user_id.clone(),
+						new_phone.clone(),
+						!self.config.require_phone_verification(),
+					)
+					.await?;
+			}
+			(None, None) => {}
 		};
 
 		if old.email != new.email {
@@ -317,7 +325,7 @@ struct User {
 	/// The user's LDAP ID
 	ldap_id: String,
 	/// The user's phone number
-	phone: String,
+	phone: Option<String>,
 	/// Whether the user is enabled
 	enabled: bool,
 
@@ -373,7 +381,7 @@ impl User {
 		let preferred_username = read_entry(&entry, &config.ldap.attributes.preferred_username)?;
 		let email = read_entry(&entry, &config.ldap.attributes.email)?;
 		let user_id = read_entry(&entry, &config.ldap.attributes.user_id)?;
-		let phone = read_entry(&entry, &config.ldap.attributes.phone)?;
+		let phone = read_entry(&entry, &config.ldap.attributes.phone).ok();
 
 		Ok(Self {
 			first_name,
@@ -409,8 +417,8 @@ impl From<User> for ImportHumanUserRequest {
 				email: user.email.clone(),
 				is_email_verified: !user.needs_email_verification,
 			}),
-			phone: Some(Phone {
-				phone: user.phone.clone(),
+			phone: user.phone.as_ref().map(|phone| Phone {
+				phone: phone.to_owned(),
 				is_phone_verified: !user.needs_phone_verification,
 			}),
 			password: String::default(),

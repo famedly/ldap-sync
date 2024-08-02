@@ -26,7 +26,7 @@ async fn test_e2e_simple_sync() {
 		"Tables",
 		"Bobby",
 		"simple@famedly.de",
-		"+12015550123",
+		Some("+12015550123"),
 		"simple",
 		false,
 	)
@@ -42,56 +42,55 @@ async fn test_e2e_simple_sync() {
 
 	assert!(user.is_some());
 
-	if let Some(user) = user {
-		assert_eq!(user.user_name, "simple@famedly.de");
+	let user = user.expect("could not find user");
 
-		if let Some(Type::Human(user)) = user.r#type {
-			let profile = user.profile.expect("user lacks a profile");
-			let phone = user.phone.expect("user lacks a phone number)");
-			let email = user.email.expect("user lacks an email address");
+	assert_eq!(user.user_name, "simple@famedly.de");
 
-			assert_eq!(profile.first_name, "Bob");
-			assert_eq!(profile.last_name, "Tables");
-			assert_eq!(profile.display_name, "Tables, Bob");
-			assert_eq!(phone.phone, "+12015550123");
-			assert!(phone.is_phone_verified);
-			assert_eq!(email.email, "simple@famedly.de");
-			assert!(email.is_email_verified);
-		} else {
-			panic!("user lacks details");
-		}
+	if let Some(Type::Human(user)) = user.r#type {
+		let profile = user.profile.expect("user lacks a profile");
+		let phone = user.phone.expect("user lacks a phone number)");
+		let email = user.email.expect("user lacks an email address");
 
-		let preferred_username = zitadel
-			.get_user_metadata(
-				Some(config().await.famedly.organization_id.clone()),
-				&user.id,
-				"preferred_username",
-			)
-			.await
-			.expect("could not get user metadata");
-		assert_eq!(preferred_username, Some("Bobby".to_owned()));
+		assert_eq!(profile.first_name, "Bob");
+		assert_eq!(profile.last_name, "Tables");
+		assert_eq!(profile.display_name, "Tables, Bob");
+		assert_eq!(phone.phone, "+12015550123");
+		assert!(phone.is_phone_verified);
+		assert_eq!(email.email, "simple@famedly.de");
+		assert!(email.is_email_verified);
+	} else {
+		panic!("user lacks details");
+	}
 
-		let uuid =
-			Uuid::new_v5(&uuid!("d9979cff-abee-4666-bc88-1ec45a843fb8"), "simple".as_bytes());
+	let preferred_username = zitadel
+		.get_user_metadata(
+			Some(config().await.famedly.organization_id.clone()),
+			&user.id,
+			"preferred_username",
+		)
+		.await
+		.expect("could not get user metadata");
+	assert_eq!(preferred_username, Some("Bobby".to_owned()));
 
-		let localpart = zitadel
-			.get_user_metadata(
-				Some(config().await.famedly.organization_id.clone()),
-				&user.id,
-				"localpart",
-			)
-			.await
-			.expect("could not get user metadata");
-		assert_eq!(localpart, Some(uuid.to_string()));
+	let uuid = Uuid::new_v5(&uuid!("d9979cff-abee-4666-bc88-1ec45a843fb8"), "simple".as_bytes());
 
-		let grants = zitadel
-			.list_user_grants(&config().await.famedly.organization_id, &user.id)
-			.await
-			.expect("failed to get user grants");
+	let localpart = zitadel
+		.get_user_metadata(
+			Some(config().await.famedly.organization_id.clone()),
+			&user.id,
+			"localpart",
+		)
+		.await
+		.expect("could not get user metadata");
+	assert_eq!(localpart, Some(uuid.to_string()));
 
-		let grant = grants.result.first().expect("no user grants found");
-		assert!(grant.role_keys.clone().into_iter().any(|key| key == "User"));
-	};
+	let grants = zitadel
+		.list_user_grants(&config().await.famedly.organization_id, &user.id)
+		.await
+		.expect("failed to get user grants");
+
+	let grant = grants.result.first().expect("no user grants found");
+	assert!(grant.role_keys.clone().into_iter().any(|key| key == "User"));
 }
 
 #[test(tokio::test)]
@@ -103,7 +102,7 @@ async fn test_e2e_sync_disabled_user() {
 		"Tables",
 		"Bobby",
 		"disabled_user@famedly.de",
-		"+12015550124",
+		Some("+12015550124"),
 		"disabled_user",
 		true,
 	)
@@ -139,7 +138,7 @@ async fn test_e2e_sync_change() {
 		"Tables",
 		"Bobby2",
 		"change@famedly.de",
-		"+12015550124",
+		Some("+12015550124"),
 		"change",
 		false,
 	)
@@ -176,7 +175,7 @@ async fn test_e2e_sync_disable() {
 		"Tables",
 		"Bobby2",
 		"disable@famedly.de",
-		"+12015550124",
+		Some("+12015550124"),
 		"disable",
 		false,
 	)
@@ -203,7 +202,7 @@ async fn test_e2e_sync_email_change() {
 		"Tables",
 		"Bobby2",
 		"email_change@famedly.de",
-		"+12015550124",
+		Some("+12015550124"),
 		"email_change",
 		false,
 	)
@@ -231,7 +230,7 @@ async fn test_e2e_sync_deletion() {
 		"Tables",
 		"Bobby3",
 		"deleted@famedly.de",
-		"+12015550124",
+		Some("+12015550124"),
 		"deleted",
 		false,
 	)
@@ -259,8 +258,16 @@ async fn test_e2e_ldaps() {
 	config.ldap.url = Url::parse("ldaps://localhost:1636").expect("invalid ldaps url");
 
 	let mut ldap = Ldap::new().await;
-	ldap.create_user("Bob", "Tables", "Bobby", "tls@famedly.de", "+12015550123", "tls", false)
-		.await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby",
+		"tls@famedly.de",
+		Some("+12015550123"),
+		"tls",
+		false,
+	)
+	.await;
 
 	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
 
@@ -285,7 +292,7 @@ async fn test_e2e_ldaps_starttls() {
 		"Tables",
 		"Bobby",
 		"starttls@famedly.de",
-		"+12015550123",
+		Some("+12015550123"),
 		"starttls",
 		false,
 	)
@@ -300,6 +307,33 @@ async fn test_e2e_ldaps_starttls() {
 		.expect("could not query Zitadel users");
 
 	assert!(user.is_some());
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_no_phone() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user("Bob", "Tables", "Bobby", "no_phone@famedly.de", None, "no_phone", false)
+		.await;
+
+	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("no_phone@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+
+	let user = user.expect("could not find user");
+
+	if let Some(Type::Human(user)) = user.r#type {
+		// Yes, I know, the codegen for the zitadel crate is
+		// pretty crazy. A missing phone number is represented as
+		// Some(Phone { phone: "", is_phone_Verified: _ })
+		assert_eq!(user.phone.expect("user lacks a phone number object").phone, "");
+	} else {
+		panic!("user lacks details");
+	};
 }
 
 struct Ldap {
@@ -335,29 +369,28 @@ impl Ldap {
 		sn: &str,
 		display_name: &str,
 		mail: &str,
-		telephone_number: &str,
+		telephone_number: Option<&str>,
 		uid: &str,
 		shadow_inactive: bool,
 	) {
 		tracing::info!("Adding test user to LDAP: `{mail}``");
 
+		let mut attrs = vec![
+			("objectClass", HashSet::from(["inetOrgPerson", "shadowAccount"])),
+			("cn", HashSet::from([cn])),
+			("sn", HashSet::from([sn])),
+			("displayName", HashSet::from([display_name])),
+			("mail", HashSet::from([mail])),
+			("uid", HashSet::from([uid])),
+			("shadowInactive", HashSet::from([if shadow_inactive { "514" } else { "512" }])),
+		];
+
+		if let Some(phone) = telephone_number {
+			attrs.push(("telephoneNumber", HashSet::from([phone])));
+		};
+
 		self.client
-			.add(
-				&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()),
-				vec![
-					("objectClass", HashSet::from(["inetOrgPerson", "shadowAccount"])),
-					("cn", HashSet::from([cn])),
-					("sn", HashSet::from([sn])),
-					("displayName", HashSet::from([display_name])),
-					("mail", HashSet::from([mail])),
-					("telephoneNumber", HashSet::from([telephone_number])),
-					("uid", HashSet::from([uid])),
-					(
-						"shadowInactive",
-						HashSet::from([if shadow_inactive { "514" } else { "512" }]),
-					),
-				],
-			)
+			.add(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()), attrs)
 			.await
 			.expect("failed to create debug user")
 			.success()
