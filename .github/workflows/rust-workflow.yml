@@ -120,6 +120,13 @@ jobs:
       working-directory: base
       run: cargo llvm-cov nextest --workspace --lcov --output-path $GITHUB_WORKSPACE/old-cov.lcov
 
+    - name: Get docker logs on failure
+      shell: bash
+      if: failure()
+      working-directory: base
+      run: |
+        docker compose --project-directory ./tests/environment logs
+
     - name: Meow Coverage
       id: coverage-report
       uses: famedly/meow-coverage@main
