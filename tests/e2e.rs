@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
+use base64::prelude::{Engine, BASE64_STANDARD};
 use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings, Mod};
 use ldap_sync::{sync_ldap_users_to_zitadel, Config};
 use tempfile::TempDir;
@@ -334,6 +335,64 @@ async fn test_e2e_no_phone() {
 	} else {
 		panic!("user lacks details");
 	};
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_binary_attr() {
+	let mut config = config().await.clone();
+
+	// OpenLDAP checks if types match, so we need to use an attribute
+	// that can actually be binary.
+	"userSMIMECertificate".clone_into(&mut config.ldap.attributes.preferred_username);
+
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby",
+		"binary@famedly.de",
+		Some("+12015550123"),
+		"binary",
+		false,
+	)
+	.await;
+	ldap.change_user(
+		"binary",
+		vec![(
+			"userSMIMECertificate".as_bytes(),
+			// It's important that this is invalid UTF-8
+			HashSet::from([[0xA0, 0xA1].as_slice()]),
+		)],
+	)
+	.await;
+
+	sync_ldap_users_to_zitadel(config.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("binary@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+
+	assert!(user.is_some());
+
+	if let Some(user) = user {
+		let preferred_username = zitadel
+			.get_user_metadata(
+				Some(config.famedly.organization_id.clone()),
+				&user.id,
+				"preferred_username",
+			)
+			.await
+			.expect("could not get user metadata");
+
+		assert_eq!(
+			preferred_username
+				.map(|u| BASE64_STANDARD.decode(u).expect("failed to decode binary attr")),
+			Some([0xA0, 0xA1].to_vec())
+		);
+	}
 }
 
 struct Ldap {
