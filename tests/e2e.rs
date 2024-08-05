@@ -399,7 +399,11 @@ impl Ldap {
 		tracing::info!("Successfully added test user");
 	}
 
-	async fn change_user(&mut self, uid: &str, changes: Vec<(&str, HashSet<&str>)>) {
+	async fn change_user<S: AsRef<[u8]> + Eq + core::hash::Hash + Send>(
+		&mut self,
+		uid: &str,
+		changes: Vec<(S, HashSet<S>)>,
+	) {
 		let mods = changes
 			.into_iter()
 			.map(|(attribute, changes)| Mod::Replace(attribute, changes))
