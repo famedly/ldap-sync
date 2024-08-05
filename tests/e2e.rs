@@ -412,6 +412,8 @@ impl Ldap {
 		self.client
 			.modify(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()), mods)
 			.await
+			.expect("failed to modify user")
+			.success()
 			.expect("failed to modify user");
 	}
 
@@ -419,6 +421,8 @@ impl Ldap {
 		self.client
 			.delete(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()))
 			.await
+			.expect("failed to delete user")
+			.success()
 			.expect("failed to delete user");
 	}
 }
