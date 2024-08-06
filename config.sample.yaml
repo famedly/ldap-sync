@@ -29,7 +29,12 @@ ldap:
     last_name: "sn"
     preferred_username: "displayName"
     email: "mail"
-    user_id: "uid"
+    user_id:
+      name: "uid"
+      # Some LDAP attributes are binary values; These should be marked
+      # explicitly. Most of the time it will work either way, but if
+      # this is not set any non-UTF8 values will fail to sync.
+      is_binary: true
     status: "shadowInactive"
     enable_value: 512
     disable_value: 514

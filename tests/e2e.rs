@@ -4,7 +4,7 @@ use std::{collections::HashSet, path::Path, time::Duration};
 
 use base64::prelude::{Engine, BASE64_STANDARD};
 use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings, Mod};
-use ldap_sync::{sync_ldap_users_to_zitadel, Config};
+use ldap_sync::{sync_ldap_users_to_zitadel, AttributeMapping, Config};
 use tempfile::TempDir;
 use test_log::test;
 use tokio::sync::OnceCell;
@@ -344,7 +344,10 @@ async fn test_e2e_binary_attr() {
 
 	// OpenLDAP checks if types match, so we need to use an attribute
 	// that can actually be binary.
-	"userSMIMECertificate".clone_into(&mut config.ldap.attributes.preferred_username);
+	config.ldap.attributes.preferred_username = AttributeMapping::OptionalBinary {
+		name: "userSMIMECertificate".to_owned(),
+		is_binary: true,
+	};
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -391,6 +394,63 @@ async fn test_e2e_binary_attr() {
 			preferred_username
 				.map(|u| BASE64_STANDARD.decode(u).expect("failed to decode binary attr")),
 			Some([0xA0, 0xA1].to_vec())
+		);
+	}
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_binary_attr_valid_utf8() {
+	let mut config = config().await.clone();
+
+	// OpenLDAP checks if types match, so we need to use an attribute
+	// that can actually be binary.
+	config.ldap.attributes.preferred_username = AttributeMapping::OptionalBinary {
+		name: "userSMIMECertificate".to_owned(),
+		is_binary: true,
+	};
+
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby",
+		"binaryutf8@famedly.de",
+		Some("+12015550123"),
+		"binaryutf8",
+		false,
+	)
+	.await;
+	ldap.change_user(
+		"binaryutf8",
+		vec![("userSMIMECertificate".as_bytes(), HashSet::from(["validutf8".as_bytes()]))],
+	)
+	.await;
+
+	sync_ldap_users_to_zitadel(config.clone()).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("binaryutf8@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+
+	assert!(user.is_some());
+
+	if let Some(user) = user {
+		let preferred_username = zitadel
+			.get_user_metadata(
+				Some(config.famedly.organization_id.clone()),
+				&user.id,
+				"preferred_username",
+			)
+			.await
+			.expect("could not get user metadata");
+
+		assert_eq!(
+			preferred_username
+				.map(|u| BASE64_STANDARD.decode(u).expect("failed to decode binary attr")),
+			Some("validutf8".as_bytes().to_vec())
 		);
 	}
 }

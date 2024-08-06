@@ -1,5 +1,8 @@
 //! All sync client configuration structs and logic
-use std::path::{Path, PathBuf};
+use std::{
+	fmt::Display,
+	path::{Path, PathBuf},
+};
 
 use anyhow::{bail, Result};
 use ldap_poller::{config::TLSConfig, AttributeConfig, CacheMethod, ConnectionConfig, Searches};
@@ -143,16 +146,16 @@ impl From<LdapConfig> for ldap_poller::Config {
 				page_size: None,
 			},
 			attributes: AttributeConfig {
-				pid: attributes.user_id,
-				updated: attributes.last_modified,
+				pid: attributes.user_id.get_name(),
+				updated: attributes.last_modified.map(AttributeMapping::get_name),
 				additional: vec![],
 				attrs_to_track: vec![
-					attributes.status,
-					attributes.first_name,
-					attributes.last_name,
-					attributes.preferred_username,
-					attributes.email,
-					attributes.phone,
+					attributes.status.get_name(),
+					attributes.first_name.get_name(),
+					attributes.last_name.get_name(),
+					attributes.preferred_username.get_name(),
+					attributes.email.get_name(),
+					attributes.phone.get_name(),
 				],
 			},
 			cache_method: CacheMethod::ModificationTime,
@@ -166,25 +169,61 @@ impl From<LdapConfig> for ldap_poller::Config {
 #[derive(Debug, Clone, Deserialize)]
 pub struct LdapAttributesMapping {
 	/// Attribute for the user's first name
-	pub first_name: String,
+	pub first_name: AttributeMapping,
 	/// Attribute for the user's last name
-	pub last_name: String,
+	pub last_name: AttributeMapping,
 	/// Attribute for the user's preferred username
-	pub preferred_username: String,
+	pub preferred_username: AttributeMapping,
 	/// Attribute for the user's email address
-	pub email: String,
+	pub email: AttributeMapping,
 	/// Attribute for the user's phone number
-	pub phone: String,
+	pub phone: AttributeMapping,
 	/// Attribute for the user's unique ID
-	pub user_id: String,
+	pub user_id: AttributeMapping,
 	/// This attribute shows the account status (LDAP = Enabled, accountStatus)
-	pub status: String,
+	pub status: AttributeMapping,
 	/// Marks an account as enabled (LDAP = TRUE, active)
 	pub enable_value: String,
 	/// Marks an account as enabled (LDAP = FALSE, inactive)
 	pub disable_value: String,
 	/// Last modified
-	pub last_modified: Option<String>,
+	pub last_modified: Option<AttributeMapping>,
+}
+
+/// How an attribute should be defined in config - it can either be a
+/// raw string, *or* it can be a struct defining both an attribute
+/// name and whether the attribute should be treated as binary.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum AttributeMapping {
+	/// An attribute that's defined without specifying whether it is
+	/// binary or not
+	NoBinaryOption(String),
+	/// An attribute that specifies whether it is binary or not
+	OptionalBinary {
+		/// The name of the attribute
+		name: String,
+		/// Whether the attribute is binary
+		#[serde(default)]
+		is_binary: bool,
+	},
+}
+
+impl AttributeMapping {
+	/// Get the attribute name
+	#[must_use]
+	pub fn get_name(self) -> String {
+		match self {
+			Self::NoBinaryOption(name) => name,
+			Self::OptionalBinary { name, .. } => name,
+		}
+	}
+}
+
+impl Display for AttributeMapping {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}", self.clone().get_name())
+	}
 }
 
 /// The LDAP TLS configuration

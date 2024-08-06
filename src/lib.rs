@@ -10,7 +10,7 @@ use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 mod config;
 mod zitadel;
 
-pub use config::Config;
+pub use config::{AttributeMapping, Config};
 use zitadel::Zitadel;
 
 /// Run the sync

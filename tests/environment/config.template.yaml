@@ -13,7 +13,9 @@ ldap:
     email: "mail"                     # objectClass: inetOrgPerson
     phone: "telephoneNumber"          # objectClass: person
     user_id: "uid"
-    status: "shadowInactive"          # objectClass: shadowAccount
+    status:
+      name: "shadowInactive"          # objectClass: shadowAccount
+      is_binary: false
     enable_value: 512
     disable_value: 514
   tls:

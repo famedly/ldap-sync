@@ -2,15 +2,16 @@
 use std::fmt::Display;
 
 use anyhow::{anyhow, bail, Result};
+use base64::prelude::{Engine, BASE64_STANDARD};
 use itertools::Itertools;
-use ldap_poller::ldap3::SearchEntry;
+use ldap_poller::{ldap3::SearchEntry, SearchEntryExt};
 use uuid::{uuid, Uuid};
 use zitadel_rust_client::{
 	error::{Error as ZitadelError, TonicErrorCode},
 	Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile, Zitadel as ZitadelClient,
 };
 
-use crate::config::{Config, FeatureFlag};
+use crate::config::{AttributeMapping, Config, FeatureFlag};
 
 /// The Famedly UUID namespace to use to generate v5 UUIDs.
 const FAMEDLY_NAMESPACE: Uuid = uuid!("d9979cff-abee-4666-bc88-1ec45a843fb8");
@@ -160,7 +161,7 @@ impl Zitadel {
 				.update_human_user_name(
 					&self.config.famedly.organization_id,
 					user_id.clone(),
-					new.email.clone(),
+					new.email.clone().to_string(),
 				)
 				.await?;
 
@@ -172,8 +173,8 @@ impl Zitadel {
 				.update_human_user_profile(
 					&self.config.famedly.organization_id,
 					user_id.clone(),
-					new.first_name.clone(),
-					new.last_name.clone(),
+					new.first_name.clone().to_string(),
+					new.last_name.clone().to_string(),
 					None,
 					Some(new.get_display_name()),
 					None,
@@ -193,7 +194,7 @@ impl Zitadel {
 					.update_human_user_phone(
 						&self.config.famedly.organization_id,
 						user_id.clone(),
-						new_phone.clone(),
+						new_phone.clone().to_string(),
 						!self.config.require_phone_verification(),
 					)
 					.await?;
@@ -206,7 +207,7 @@ impl Zitadel {
 				.update_human_user_email(
 					&self.config.famedly.organization_id,
 					user_id.clone(),
-					new.email.clone(),
+					new.email.clone().to_string(),
 					!self.config.require_email_verification(),
 				)
 				.await?;
@@ -218,7 +219,7 @@ impl Zitadel {
 					Some(&self.config.famedly.organization_id),
 					user_id,
 					"preferred_username".to_owned(),
-					&new.preferred_username,
+					&new.preferred_username.clone().to_string(),
 				)
 				.await?;
 		};
@@ -248,7 +249,7 @@ impl Zitadel {
 	/// Retrieve the Zitadel user ID of a user, or None if the user
 	/// cannot be found
 	async fn get_user_id(&self, user: &User) -> Result<Option<String>> {
-		let status = self.client.get_user_by_login_name(&user.email).await;
+		let status = self.client.get_user_by_login_name(&user.email.clone().to_string()).await;
 
 		if let Err(ZitadelError::TonicResponseError(ref error)) = status {
 			if error.code() == TonicErrorCode::NotFound {
@@ -284,16 +285,21 @@ impl Zitadel {
 				Some(&self.config.famedly.organization_id),
 				new_user_id.clone(),
 				"preferred_username".to_owned(),
-				&user.preferred_username,
+				&user.preferred_username.clone().to_string(),
 			)
 			.await?;
+
+		let id = match &user.ldap_id {
+			StringOrBytes::String(value) => value.as_bytes(),
+			StringOrBytes::Bytes(value) => value,
+		};
 
 		self.client
 			.set_user_metadata(
 				Some(&self.config.famedly.organization_id),
 				new_user_id.clone(),
 				"localpart".to_owned(),
-				&Uuid::new_v5(&FAMEDLY_NAMESPACE, user.ldap_id.as_bytes()).to_string(),
+				&Uuid::new_v5(&FAMEDLY_NAMESPACE, id).to_string(),
 			)
 			.await?;
 
@@ -313,21 +319,39 @@ impl Zitadel {
 	}
 }
 
+/// A structure that can either be a string or bytes
+#[derive(Clone, Debug, PartialEq)]
+enum StringOrBytes {
+	/// A string
+	String(String),
+	/// A byte string
+	Bytes(Vec<u8>),
+}
+
+impl Display for StringOrBytes {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			StringOrBytes::String(value) => write!(f, "{}", value),
+			StringOrBytes::Bytes(value) => write!(f, "{}", BASE64_STANDARD.encode(value)),
+		}
+	}
+}
+
 /// Crate-internal representation of a Zitadel/LDAP user
 #[derive(Clone, Debug)]
 struct User {
 	/// The user's first name
-	first_name: String,
+	first_name: StringOrBytes,
 	/// The user's last name
-	last_name: String,
+	last_name: StringOrBytes,
 	/// The user's preferred username
-	preferred_username: String,
+	preferred_username: StringOrBytes,
 	/// The user's email address
-	email: String,
+	email: StringOrBytes,
 	/// The user's LDAP ID
-	ldap_id: String,
+	ldap_id: StringOrBytes,
 	/// The user's phone number
-	phone: Option<String>,
+	phone: Option<StringOrBytes>,
 	/// Whether the user is enabled
 	enabled: bool,
 
@@ -350,7 +374,7 @@ impl User {
 		if let Some(idp_id) = self.idp_id.clone() {
 			vec![Idp {
 				config_id: idp_id,
-				external_user_id: self.ldap_id.clone(),
+				external_user_id: self.ldap_id.clone().to_string(),
 				display_name: self.get_display_name(),
 			}]
 		} else {
@@ -366,23 +390,32 @@ impl User {
 	/// Construct a user from an LDAP SearchEntry
 	fn try_from_search_entry(entry: SearchEntry, config: &Config) -> Result<Self> {
 		/// Read an attribute from the entry
-		fn read_entry(entry: &SearchEntry, attribute: &str) -> Result<String> {
-			entry
-				.attrs
-				.get(attribute)
-				.ok_or(anyhow!("missing attribute `{}` for `{}`", attribute, entry.dn))
-				.and_then(|values| {
-					values.first().ok_or(anyhow!(
-						"missing `{}` values for `{}`",
-						attribute,
-						entry.dn
-					))
-				})
-				.cloned()
+		fn read_entry(entry: &SearchEntry, attribute: &AttributeMapping) -> Result<StringOrBytes> {
+			match attribute {
+				AttributeMapping::OptionalBinary { name, is_binary: false }
+				| AttributeMapping::NoBinaryOption(name) => {
+					if let Some(attr) = entry.attr_first(name) {
+						return Ok(StringOrBytes::String(attr.to_owned()));
+					};
+				}
+				AttributeMapping::OptionalBinary { name, is_binary: true } => {
+					if let Some(binary_attr) = entry.bin_attr_first(name) {
+						return Ok(StringOrBytes::Bytes(binary_attr.to_vec()));
+					};
+
+					// If attributes encode as valid UTF-8, they will
+					// not be in the bin_attr list
+					if let Some(attr) = entry.attr_first(name) {
+						return Ok(StringOrBytes::Bytes(attr.as_bytes().to_vec()));
+					};
+				}
+			}
+
+			bail!("missing `{}` values for `{}`", attribute, entry.dn)
 		}
 
 		let enabled = read_entry(&entry, &config.ldap.attributes.status)?
-			!= config.ldap.attributes.disable_value;
+			!= StringOrBytes::String(config.ldap.attributes.disable_value.clone());
 		let first_name = read_entry(&entry, &config.ldap.attributes.first_name)?;
 		let last_name = read_entry(&entry, &config.ldap.attributes.last_name)?;
 		let preferred_username = read_entry(&entry, &config.ldap.attributes.preferred_username)?;
@@ -411,21 +444,21 @@ impl User {
 impl From<User> for ImportHumanUserRequest {
 	fn from(user: User) -> Self {
 		Self {
-			user_name: user.email.clone(),
+			user_name: user.email.clone().to_string(),
 			profile: Some(Profile {
-				first_name: user.first_name.clone(),
-				last_name: user.last_name.clone(),
+				first_name: user.first_name.clone().to_string(),
+				last_name: user.last_name.clone().to_string(),
 				display_name: user.get_display_name(),
 				gender: Gender::Unspecified.into(), // 0 means "unspecified",
-				nick_name: user.ldap_id.clone(),
+				nick_name: user.ldap_id.clone().to_string(),
 				preferred_language: String::default(),
 			}),
 			email: Some(Email {
-				email: user.email.clone(),
+				email: user.email.clone().to_string(),
 				is_email_verified: !user.needs_email_verification,
 			}),
 			phone: user.phone.as_ref().map(|phone| Phone {
-				phone: phone.to_owned(),
+				phone: phone.to_owned().to_string(),
 				is_phone_verified: !user.needs_phone_verification,
 			}),
 			password: String::default(),
