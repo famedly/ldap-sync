@@ -8,6 +8,7 @@ use tokio::sync::mpsc::Receiver;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
 mod config;
+mod user;
 mod zitadel;
 
 pub use config::{AttributeMapping, Config};
