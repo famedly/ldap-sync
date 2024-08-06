@@ -119,24 +119,34 @@ pub struct LdapConfig {
 	/// Whether to update deleted entries
 	pub check_for_deleted_entries: bool,
 	/// TLS-related configuration
-	pub tls: LdapTlsConfig,
+	pub tls: Option<LdapTlsConfig>,
 }
 
 impl From<LdapConfig> for ldap_poller::Config {
 	fn from(cfg: LdapConfig) -> ldap_poller::Config {
+		let starttls = cfg.tls.as_ref().is_some_and(|tls| tls.danger_use_start_tls);
+		let no_tls_verify = cfg.tls.as_ref().is_some_and(|tls| tls.danger_disable_tls_verify);
+		let root_certificates_path =
+			cfg.tls.as_ref().and_then(|tls| tls.server_certificate.clone());
+		let client_key_path = cfg.tls.as_ref().and_then(|tls| tls.client_key.clone());
+		let client_certificate_path =
+			cfg.tls.as_ref().and_then(|tls| tls.client_certificate.clone());
+
+		let tls = TLSConfig {
+			starttls,
+			no_tls_verify,
+			root_certificates_path,
+			client_key_path,
+			client_certificate_path,
+		};
+
 		let attributes = cfg.attributes;
 		ldap_poller::Config {
 			url: cfg.url,
 			connection: ConnectionConfig {
 				timeout: cfg.timeout,
 				operation_timeout: std::time::Duration::from_secs(cfg.timeout),
-				tls: TLSConfig {
-					starttls: cfg.tls.danger_use_start_tls,
-					no_tls_verify: cfg.tls.danger_disable_tls_verify,
-					root_certificates_path: cfg.tls.server_certificate,
-					client_key_path: cfg.tls.client_key,
-					client_certificate_path: cfg.tls.client_certificate,
-				},
+				tls,
 			},
 			search_user: cfg.bind_dn,
 			search_password: cfg.bind_password,

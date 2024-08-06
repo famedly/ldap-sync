@@ -285,7 +285,7 @@ async fn test_e2e_ldaps() {
 #[test_log(default_log_filter = "debug")]
 async fn test_e2e_ldaps_starttls() {
 	let mut config = config().await.clone();
-	config.ldap.tls.danger_use_start_tls = true;
+	config.ldap.tls.as_mut().expect("tls must be configured").danger_use_start_tls = true;
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
