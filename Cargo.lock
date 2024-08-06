@@ -1155,7 +1155,7 @@ dependencies = [
 [[package]]
 name = "ldap-poller"
 version = "0.1.0"
-source = "git+ssh://git@github.com/famedly/ldap-poller.git#033dd7187d41e33aaf5afc600f69774711aea9a9"
+source = "git+https://github.com/famedly/ldap-poller#033dd7187d41e33aaf5afc600f69774711aea9a9"
 dependencies = [
  "ldap3",
  "native-tls",
@@ -3305,7 +3305,7 @@ dependencies = [
 [[package]]
 name = "zitadel-rust-client"
 version = "0.1.0"
-source = "git+ssh://git@github.com/famedly/zitadel-rust-client.git#e2f507076b6062cab48387852c55e99eb7d7ec31"
+source = "git+https://github.com/famedly/zitadel-rust-client#e2f507076b6062cab48387852c55e99eb7d7ec31"
 dependencies = [
  "headers",
  "hyper",
