@@ -1,4 +1,6 @@
 //! Helper functions for submitting data to Zitadel
+use std::fmt::Display;
+
 use anyhow::{anyhow, bail, Result};
 use itertools::Itertools;
 use ldap_poller::ldap3::SearchEntry;
@@ -58,7 +60,7 @@ impl Zitadel {
 			let sync_status = self.import_user(&user).await;
 
 			if let Err(error) = sync_status {
-				tracing::error!("Failed to sync user `{}`: {}", user.ldap_id, error);
+				tracing::error!("Failed to sync user `{}`: {}", user.log_name(), error);
 			};
 		}
 
@@ -106,7 +108,7 @@ impl Zitadel {
 			let status = self.delete_user(&user).await;
 
 			if let Err(error) = status {
-				tracing::error!("Failed to delete user `{}`: {}`", user.ldap_id, error);
+				tracing::error!("Failed to delete user `{}`: {}`", user.log_name(), error);
 			}
 		}
 
@@ -114,7 +116,7 @@ impl Zitadel {
 			let status = self.import_user(&user).await;
 
 			if let Err(error) = status {
-				tracing::error!("Failed to re-create user `{}`: {}", user.ldap_id, error);
+				tracing::error!("Failed to re-create user `{}`: {}", user.log_name(), error);
 			}
 		}
 
@@ -122,7 +124,7 @@ impl Zitadel {
 			let status = self.update_user(&old, &new).await;
 
 			if let Err(error) = status {
-				tracing::error!("Failed to update user `{}`: {}", new.ldap_id, error);
+				tracing::error!("Failed to update user `{}`: {}", new.log_name(), error);
 			}
 		}
 
@@ -312,7 +314,7 @@ impl Zitadel {
 }
 
 /// Crate-internal representation of a Zitadel/LDAP user
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct User {
 	/// The user's first name
 	first_name: String,
@@ -354,6 +356,11 @@ impl User {
 		} else {
 			vec![]
 		}
+	}
+
+	/// Return the name to be used in logs to identify this user
+	fn log_name(&self) -> String {
+		format!("email={}", &self.email)
 	}
 
 	/// Construct a user from an LDAP SearchEntry
