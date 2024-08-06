@@ -149,12 +149,23 @@ impl Display for User {
 }
 
 /// A structure that can either be a string or bytes
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub(crate) enum StringOrBytes {
 	/// A string
 	String(String),
 	/// A byte string
 	Bytes(Vec<u8>),
+}
+
+impl PartialEq for StringOrBytes {
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(Self::String(s), Self::String(o)) => s == o,
+			(Self::String(s), Self::Bytes(o)) => s.as_bytes() == o,
+			(Self::Bytes(s), Self::String(o)) => s == o.as_bytes(),
+			(Self::Bytes(s), Self::Bytes(o)) => s == o,
+		}
+	}
 }
 
 impl Display for StringOrBytes {
