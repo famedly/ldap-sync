@@ -21,11 +21,6 @@ concurrency:
 jobs:
   simple-checks:
     container: ghcr.io/famedly/rust-container:nightly
-    # This is set explictly to allow Meow-Coverage to post comments in response to Dependabot PRs which have a read-only GITHUB_TOKEN by default
-    permissions:
-      pull-requests: write
-      issues: write
-      contents: read
     runs-on: ubuntu-latest-16core
     steps:
     - name: Checkout current repository
@@ -85,40 +80,18 @@ jobs:
 
     - name: Install additional cargo tooling
       shell: bash
-      run: cargo install cargo-llvm-cov cargo-nextest --locked
+      run: cargo install cargo-nextest --locked
 
     - name: Caching
       uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
       with:
         workspaces: "head -> target"
 
-    - name: Test & Coverage
+    - name: Test
       timeout-minutes: 20
       shell: bash
       working-directory: head
-      run: cargo llvm-cov nextest --no-fail-fast --workspace --lcov --output-path $GITHUB_WORKSPACE/new-cov.lcov
-
-    - name: Load base coverage results from cache
-      if: github.event_name == 'pull_request'
-      id: cache-coverage
-      uses: actions/cache@v3
-      with:
-        path: ./old-cov.lcov
-        key: coverage-${{ github.event.pull_request.base.sha }}
-
-    - name: Pull base
-      uses: actions/checkout@v3
-      if: github.event_name == 'pull_request' && steps.cache-coverage.outputs.cache-hit != 'true'
-      with:
-        ref: ${{ github.event.pull_request.base.ref }}
-        repository: ${{ github.event.pull_request.base.full_name }}
-        path: base
-
-    - name: Generate base coverage
-      if: github.event_name == 'pull_request' && steps.cache-coverage.outputs.cache-hit != 'true'
-      shell: bash
-      working-directory: base
-      run: cargo llvm-cov nextest --workspace --lcov --output-path $GITHUB_WORKSPACE/old-cov.lcov
+      run: cargo nextest run --no-fail-fast --workspace
 
     - name: Get docker logs on failure
       shell: bash
@@ -126,16 +99,3 @@ jobs:
       working-directory: base
       run: |
         docker compose --project-directory ./tests/environment logs
-
-    - name: Meow Coverage
-      id: coverage-report
-      uses: famedly/meow-coverage@main
-      if: github.event_name == 'pull_request'
-      with:
-        new-lcov-file: 'new-cov.lcov'
-        old-lcov-file: ${{ github.event_name == 'pull_request' && 'old-cov.lcov' || '' }}
-        source-prefix: 'src/'
-        pr-number: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}
-        repo-name: ${{ github.repository }}
-        commit-id: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event.after }}
-        github-token: ${{ secrets.GITHUB_TOKEN }}
