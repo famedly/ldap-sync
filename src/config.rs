@@ -105,9 +105,6 @@ pub struct LdapConfig {
 	pub bind_dn: String,
 	/// The password for the bind DN
 	pub bind_password: String,
-	// /// TODO
-	// /// Example: inetOrgPerson, organizationalPerson
-	// userObjectClasses: Vec<String>,
 	/// Filter to apply when searching for users, e.g., (objectClass=person) DO
 	/// NOT FILTER STATUS!
 	pub user_filter: String,
