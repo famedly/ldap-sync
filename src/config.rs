@@ -53,32 +53,6 @@ fn validate_famedly_url(url: Url) -> Result<Url> {
 	Ok(url)
 }
 
-#[cfg(test)]
-mod tests {
-	#![allow(clippy::expect_used)]
-	use super::*;
-
-	#[test]
-	fn test_famedly_url_validate_valid() {
-		let url = Url::parse("https://famedly.de").expect("invalid url");
-		let validated = validate_famedly_url(url).expect("url failed to validate");
-		assert_eq!(validated.to_string(), "https://famedly.de/");
-	}
-
-	#[test]
-	fn test_famedly_url_validate_trailing_slash_path() {
-		let url = Url::parse("https://famedly.de/test/").expect("invalid url");
-		let validated = validate_famedly_url(url).expect("url failed to validate");
-		assert_eq!(validated.to_string(), "https://famedly.de/test/");
-	}
-
-	#[test]
-	fn test_famedly_url_validate_scheme() {
-		let url = Url::parse("famedly.de:443").expect("invalid url");
-		assert!(validate_famedly_url(url).is_err());
-	}
-}
-
 /// Configuration for the sync client
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
@@ -115,6 +89,11 @@ pub struct LdapConfig {
 	pub attributes: LdapAttributesMapping,
 	/// Whether to update deleted entries
 	pub check_for_deleted_entries: bool,
+	/// Whether to ask LDAP for specific attributes or just specify *.
+	///
+	/// Various implementations either do or don't send data in both
+	/// cases, so this needs to be tested against the actual server.
+	pub use_attribute_filter: bool,
 	/// TLS-related configuration
 	pub tls: Option<LdapTlsConfig>,
 }
@@ -156,6 +135,7 @@ impl From<LdapConfig> for ldap_poller::Config {
 				pid: attributes.user_id.get_name(),
 				updated: attributes.last_modified.map(AttributeMapping::get_name),
 				additional: vec![],
+				filter_attributes: cfg.use_attribute_filter,
 				attrs_to_track: vec![
 					attributes.status.get_name(),
 					attributes.first_name.get_name(),
@@ -290,4 +270,97 @@ pub enum FeatureFlag {
 	VerifyEmail,
 	/// If users should verify the phone. Users will receive a verification sms
 	VerifyPhone,
+}
+
+#[cfg(test)]
+mod tests {
+	#![allow(clippy::expect_used, clippy::unwrap_used)]
+	use indoc::indoc;
+
+	use super::*;
+
+	const EXAMPLE_CONFIG: &str = indoc! {r#"
+        ldap:
+          url: ldap://localhost:1389
+          base_dn: ou=testorg,dc=example,dc=org
+          bind_dn: cn=admin,dc=example,dc=org
+          bind_password: adminpassword
+          user_filter: "(objectClass=shadowAccount)"
+          timeout: 5
+          check_for_deleted_entries: true
+          use_attribute_filter: true
+          attributes:
+            first_name: "cn"
+            last_name: "sn"
+            preferred_username: "displayName"
+            email: "mail"
+            phone: "telephoneNumber"
+            user_id: "uid"
+            status:
+              name: "shadowInactive"
+              is_binary: false
+            enable_value: 512
+            disable_value: 514
+          tls:
+            client_key: ./tests/environment/certs/client.key
+            client_certificate: ./tests/environment/certs/client.crt
+            server_certificate: ./tests/environment/certs/server.crt
+            danger_disable_tls_verify: false
+            danger_use_start_tls: false
+
+        famedly:
+          url: http://localhost:8080
+          key_file: tests/environment/zitadel/service-user.json
+          organization_id: 1
+          project_id: 1
+          idp_id: 1
+
+        feature_flags: []
+        cache_path: ./test
+	"#};
+
+	fn example_config() -> Config {
+		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
+	}
+
+	#[test]
+	fn test_famedly_url_validate_valid() {
+		let url = Url::parse("https://famedly.de").expect("invalid url");
+		let validated = validate_famedly_url(url).expect("url failed to validate");
+		assert_eq!(validated.to_string(), "https://famedly.de/");
+	}
+
+	#[test]
+	fn test_famedly_url_validate_trailing_slash_path() {
+		let url = Url::parse("https://famedly.de/test/").expect("invalid url");
+		let validated = validate_famedly_url(url).expect("url failed to validate");
+		assert_eq!(validated.to_string(), "https://famedly.de/test/");
+	}
+
+	#[test]
+	fn test_famedly_url_validate_scheme() {
+		let url = Url::parse("famedly.de:443").expect("invalid url");
+		assert!(validate_famedly_url(url).is_err());
+	}
+
+	#[test]
+	fn test_attribute_filter_use() {
+		let config = example_config();
+
+		assert_eq!(
+			Into::<ldap_poller::Config>::into(config.ldap).attributes.get_attr_filter(),
+			vec!["uid", "shadowInactive", "cn", "sn", "displayName", "mail", "telephoneNumber"]
+		);
+	}
+
+	#[test]
+	fn test_no_attribute_filters() {
+		let mut config = example_config();
+		config.ldap.use_attribute_filter = false;
+
+		assert_eq!(
+			Into::<ldap_poller::Config>::into(config.ldap).attributes.get_attr_filter(),
+			vec!["*"]
+		);
+	}
 }

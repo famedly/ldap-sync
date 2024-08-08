@@ -6,6 +6,7 @@ ldap:
   user_filter: "(objectClass=shadowAccount)"
   timeout: 5
   check_for_deleted_entries: true
+  use_attribute_filter: true
   attributes:
     first_name: "cn"                  # objectClass: person
     last_name: "sn"                   # objectClass: person

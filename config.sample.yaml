@@ -18,6 +18,12 @@ ldap:
   timeout: 5
   # Whether to sync entry deletion.
   check_for_deleted_entries: true
+  # Whether to filter for the specific attributes used. Some LDAP
+  # implementations misbehave if this is not done, others misbehave if
+  # it is done.
+  #
+  # Default is false.
+  use_attribute_filter: true
   # A mapping of the LDAP attributes to Famedly attributes. This is
   # different for different LDAP server implementations and
   # organizations, so needs to be configured on a case-by-case basis.

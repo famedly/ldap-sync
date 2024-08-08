@@ -1056,6 +1056,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "indoc"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b248f5224d1d606005e02c97f5aa4e88eeb230488bcc03bc9ca4d7991399f2b5"
+
+[[package]]
 name = "ipnet"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1155,7 +1161,7 @@ dependencies = [
 [[package]]
 name = "ldap-poller"
 version = "0.1.0"
-source = "git+https://github.com/famedly/ldap-poller#033dd7187d41e33aaf5afc600f69774711aea9a9"
+source = "git+https://github.com/famedly/ldap-poller#96dfa724a618b1f0f6caec83f4e261366d2e84e1"
 dependencies = [
  "ldap3",
  "native-tls",
@@ -1175,6 +1181,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "bincode",
+ "indoc",
  "itertools 0.13.0",
  "ldap-poller",
  "ldap3",

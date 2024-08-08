@@ -116,6 +116,7 @@ useless_let_if_seq = "warn"
 verbose_file_reads = "warn"
 
 [dev-dependencies]
+indoc = "2.0.5"
 ldap3 = { version = "0.11.1", default-features = false, features = ["tls-native"] }
 tempfile = "3.10.1"
 test-log = { version = "0.2.16", features = ["trace", "unstable"] }
