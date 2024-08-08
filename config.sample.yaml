@@ -41,9 +41,12 @@ ldap:
       # explicitly. Most of the time it will work either way, but if
       # this is not set any non-UTF8 values will fail to sync.
       is_binary: true
-    status: "shadowInactive"
-    enable_value: 512
-    disable_value: 514
+    # Status flag for the user. This is read as a big-endian integer. Normally userAccountControl in AD.
+    status: "shadowFlag"
+    # Vector of bitmasks that marks the user as disabled. Tested on status.
+    # (for example ACCOUNTDISABLE=0x2 and LOCKOUT=0x10 in AD)
+    # Decimal (or hex) representation of the specific flag mask
+    disable_bitmasks: [0x2, 0x10]
     # Phone numbers are the only optional attribute, if a user does
     # not have a phone number this will be silently ignored
     phone: "telephoneNumber"

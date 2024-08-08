@@ -169,7 +169,7 @@ async fn test_e2e_sync_change() {
 
 #[test(tokio::test)]
 #[test_log(default_log_filter = "debug")]
-async fn test_e2e_sync_disable() {
+async fn test_e2e_sync_disable_and_reenable() {
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
 		"Bob",
@@ -183,15 +183,20 @@ async fn test_e2e_sync_disable() {
 	.await;
 
 	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
-
-	ldap.change_user("disable", vec![("shadowInactive", HashSet::from(["514"]))]).await;
-
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
-
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel.get_user_by_login_name("disable@famedly.de").await;
+	assert!(user.is_ok_and(|u| u.is_some()));
 
+	ldap.change_user("disable", vec![("shadowFlag", HashSet::from(["514"]))]).await;
+	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	let user = zitadel.get_user_by_login_name("disable@famedly.de").await;
 	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
+
+	ldap.change_user("disable", vec![("shadowFlag", HashSet::from(["512"]))]).await;
+	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel.get_user_by_login_name("disable@famedly.de").await;
+	assert!(user.is_ok_and(|u| u.is_some()));
 }
 
 #[test(tokio::test)]
@@ -494,6 +499,9 @@ impl Ldap {
 	) {
 		tracing::info!("Adding test user to LDAP: `{mail}``");
 
+		let user_account_control_value =
+			if shadow_inactive { 514_i32.to_string() } else { 512_i32.to_string() };
+
 		let mut attrs = vec![
 			("objectClass", HashSet::from(["inetOrgPerson", "shadowAccount"])),
 			("cn", HashSet::from([cn])),
@@ -501,7 +509,7 @@ impl Ldap {
 			("displayName", HashSet::from([display_name])),
 			("mail", HashSet::from([mail])),
 			("uid", HashSet::from([uid])),
-			("shadowInactive", HashSet::from([if shadow_inactive { "514" } else { "512" }])),
+			("shadowFlag", HashSet::from([user_account_control_value.as_str()])),
 		];
 
 		if let Some(phone) = telephone_number {

@@ -167,12 +167,12 @@ pub struct LdapAttributesMapping {
 	pub phone: AttributeMapping,
 	/// Attribute for the user's unique ID
 	pub user_id: AttributeMapping,
-	/// This attribute shows the account status (LDAP = Enabled, accountStatus)
+	/// This attribute shows the account status (It expects an i32 like
+	/// userAccountControl in AD)
 	pub status: AttributeMapping,
-	/// Marks an account as enabled (LDAP = TRUE, active)
-	pub enable_value: String,
-	/// Marks an account as enabled (LDAP = FALSE, inactive)
-	pub disable_value: String,
+	/// Marks an account as disabled (for example userAccountControl: bit flag
+	/// ACCOUNTDISABLE would be 2)
+	pub disable_bitmasks: Vec<i32>,
 	/// Last modified
 	pub last_modified: Option<AttributeMapping>,
 }
@@ -297,10 +297,9 @@ mod tests {
             phone: "telephoneNumber"
             user_id: "uid"
             status:
-              name: "shadowInactive"
+              name: "shadowFlag"
               is_binary: false
-            enable_value: 512
-            disable_value: 514
+            disable_bitmasks: [0x2, 0x10]
           tls:
             client_key: ./tests/environment/certs/client.key
             client_certificate: ./tests/environment/certs/client.crt
@@ -349,7 +348,7 @@ mod tests {
 
 		assert_eq!(
 			Into::<ldap_poller::Config>::into(config.ldap).attributes.get_attr_filter(),
-			vec!["uid", "shadowInactive", "cn", "sn", "displayName", "mail", "telephoneNumber"]
+			vec!["uid", "shadowFlag", "cn", "sn", "displayName", "mail", "telephoneNumber"]
 		);
 	}
 

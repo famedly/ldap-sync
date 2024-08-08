@@ -15,10 +15,9 @@ ldap:
     phone: "telephoneNumber"          # objectClass: person
     user_id: "uid"
     status:
-      name: "shadowInactive"          # objectClass: shadowAccount
+      name: "shadowFlag"          # objectClass: shadowAccount
       is_binary: false
-    enable_value: 512
-    disable_value: 514
+    disable_bitmasks: [0x2, 0x10]
   tls:
     client_key: ./tests/environment/certs/client.key
     client_certificate: ./tests/environment/certs/client.crt

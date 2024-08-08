@@ -1,7 +1,7 @@
 //! User data helpers
 use std::fmt::Display;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use base64::prelude::{Engine, BASE64_STANDARD};
 use ldap_poller::{ldap3::SearchEntry, SearchEntryExt};
 use zitadel_rust_client::{Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile};
@@ -72,8 +72,15 @@ impl User {
 			bail!("missing `{}` values for `{}`", attribute, entry.dn)
 		}
 
-		let enabled = read_entry(&entry, &config.ldap.attributes.status)?
-			!= StringOrBytes::String(config.ldap.attributes.disable_value.clone());
+		let status_as_int = match read_entry(&entry, &config.ldap.attributes.status)? {
+			StringOrBytes::String(status) => status.parse::<i32>()?,
+			StringOrBytes::Bytes(status) => i32::from_be_bytes(
+				status.try_into().map_err(|_| anyhow!("failed to convert to i32 flag"))?,
+			),
+		};
+		let enabled =
+			!config.ldap.attributes.disable_bitmasks.iter().any(|flag| status_as_int & flag != 0);
+
 		let first_name = read_entry(&entry, &config.ldap.attributes.first_name)?;
 		let last_name = read_entry(&entry, &config.ldap.attributes.last_name)?;
 		let preferred_username = read_entry(&entry, &config.ldap.attributes.preferred_username)?;
