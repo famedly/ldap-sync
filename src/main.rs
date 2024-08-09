@@ -10,7 +10,7 @@ async fn main() -> ExitCode {
 	match run_sync().await {
 		Ok(_) => ExitCode::SUCCESS,
 		Err(e) => {
-			tracing::error!("{}", e);
+			tracing::error!("{:?}", e);
 			ExitCode::FAILURE
 		}
 	}
