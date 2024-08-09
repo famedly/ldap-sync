@@ -34,12 +34,6 @@ impl Config {
 	pub fn require_email_verification(&self) -> bool {
 		self.feature_flags.contains(&FeatureFlag::VerifyEmail)
 	}
-
-	/// Whether SSO login is enabled
-	#[must_use]
-	pub fn require_sso_login(&self) -> bool {
-		self.feature_flags.contains(&FeatureFlag::SsoLogin)
-	}
 }
 
 /// Validate the famedly URL
@@ -263,9 +257,6 @@ pub type Set<T> = Vec<T>;
 /// Opt-in features
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub enum FeatureFlag {
-	/// If SSO should be activated. It requires idpId, idpUserName, idpUserId
-	/// mapping
-	SsoLogin,
 	/// If users should verify the mail. Users will receive a verification mail
 	VerifyEmail,
 	/// If users should verify the phone. Users will receive a verification sms
