@@ -31,7 +31,7 @@ pub(crate) struct User {
 	/// Whether the user should be prompted to verify their phone number
 	pub(crate) needs_phone_verification: bool,
 	/// The ID of the identity provider to link with, if any
-	pub(crate) idp_id: Option<String>,
+	pub(crate) idp_id: String,
 }
 
 impl User {
@@ -91,24 +91,17 @@ impl User {
 			enabled,
 			needs_email_verification: config.feature_flags.contains(&FeatureFlag::VerifyEmail),
 			needs_phone_verification: config.feature_flags.contains(&FeatureFlag::VerifyPhone),
-			idp_id: config
-				.feature_flags
-				.contains(&FeatureFlag::SsoLogin)
-				.then(|| config.famedly.idp_id.clone()),
+			idp_id: config.famedly.idp_id.clone(),
 		})
 	}
 
 	/// Get idp link as required by Zitadel
 	fn get_idps(&self) -> Vec<Idp> {
-		if let Some(idp_id) = self.idp_id.clone() {
-			vec![Idp {
-				config_id: idp_id,
-				external_user_id: self.ldap_id.clone().to_string(),
-				display_name: self.get_display_name(),
-			}]
-		} else {
-			vec![]
-		}
+		vec![Idp {
+			config_id: self.idp_id.clone(),
+			external_user_id: self.ldap_id.clone().to_string(),
+			display_name: self.get_display_name(),
+		}]
 	}
 }
 
