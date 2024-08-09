@@ -142,7 +142,7 @@ impl From<User> for ImportHumanUserRequest {
 			password: String::default(),
 			hashed_password: None,
 			password_change_required: false,
-			request_passwordless_registration: true,
+			request_passwordless_registration: false,
 			otp_code: String::default(),
 			idps: user.get_idps(),
 		}
