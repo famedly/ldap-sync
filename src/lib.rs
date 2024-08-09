@@ -30,17 +30,18 @@ pub async fn sync_ldap_users_to_zitadel(config: Config) -> Result<()> {
 		.await
 		.context("failed to write cache")?;
 
+		tracing::info!("Finished syncing LDAP data");
+
 		Ok(())
 	});
 
 	let (added, changed, removed) = get_user_changes(ldap_receiver).await;
-	tracing::info!("Finished syncing LDAP data");
+
+	sync_handle.await??;
 
 	zitadel.import_new_users(added).await?;
 	zitadel.update_users(changed).await?;
 	zitadel.delete_users(removed).await?;
-
-	let _ = sync_handle.await?;
 
 	Ok(())
 }
