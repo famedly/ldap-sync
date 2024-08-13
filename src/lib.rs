@@ -11,11 +11,15 @@ mod config;
 mod user;
 mod zitadel;
 
-pub use config::{AttributeMapping, Config};
+pub use config::{AttributeMapping, Config, FeatureFlag};
 use zitadel::Zitadel;
 
 /// Run the sync
 pub async fn sync_ldap_users_to_zitadel(config: Config) -> Result<()> {
+	if !config.feature_flags.contains(&FeatureFlag::SsoLogin) {
+		anyhow::bail!("Non-SSO configuration is currently not supported");
+	}
+
 	let cache = read_cache(&config.cache_path).await?;
 	let zitadel = Zitadel::new(&config).await?;
 	let (mut ldap_client, ldap_receiver) = Ldap::new(config.clone().ldap.into(), cache);

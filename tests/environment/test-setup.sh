@@ -78,11 +78,34 @@ echo "Creating test project"
 project_id="$(zitadel_request 'management/v1/projects' POST --data '{"name": "TestProject"}' | jq --raw-output '.id')"
 zitadel_request "management/v1/projects/$project_id/roles" POST --data '{"roleKey": "User", "displayName": "User"}'
 
+echo "Setting up ldap IDP"
+idp_id="$(zitadel_request 'management/v1/idps/ldap' POST --json @- <<EOF | jq --raw-output '.id'
+{
+    "name": "ldap",
+    "servers": ["${LDAP_HOST}"],
+    "startTls": false,
+    "baseDn": "ou=testorg,${LDAP_BASE}",
+    "bindDn": "${LDAP_ADMIN}",
+    "bindPassword": "${LDAP_PASSWORD}",
+    "userBase": "dn",
+    "userObjectClasses": ["shadowAccount"],
+    "userFilters": ["(objectClass=shadowAccount)"],
+    "attributes": {
+        "idAttribute": "uid"
+    },
+    "providerOptions": {
+		"isCreationAllowed": true
+    }
+}
+EOF
+)"
+
 echo "Updating Zitadel IDs"
 org_id="$(zitadel_request 'management/v1/orgs/me' GET | jq --raw-output '.org.id')"
 
 sed "s/@ORGANIZATION_ID@/$org_id/" /config.template.yaml > /environment/config.yaml
 sed "s/@PROJECT_ID@/$project_id/" -i /environment/config.yaml
+sed "s/@IDP_ID@/$idp_id/" -i /environment/config.yaml
 
 echo "Deleting LDAP test data"
 ldapdelete -D "${LDAP_ADMIN}" -w "${LDAP_PASSWORD}" -H "${LDAP_HOST}" -r "ou=testorg,${LDAP_BASE}" || true

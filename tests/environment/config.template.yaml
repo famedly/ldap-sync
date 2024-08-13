@@ -30,7 +30,8 @@ famedly:
   key_file: tests/environment/zitadel/service-user.json
   organization_id: @ORGANIZATION_ID@
   project_id: @PROJECT_ID@
-  idp_id: tbd
+  idp_id: @IDP_ID@
 
-feature_flags: []
+feature_flags:
+  - SsoLogin
 cache_path: ./test

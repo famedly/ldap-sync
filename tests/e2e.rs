@@ -4,7 +4,7 @@ use std::{collections::HashSet, path::Path, time::Duration};
 
 use base64::prelude::{Engine, BASE64_STANDARD};
 use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings, Mod};
-use ldap_sync::{sync_ldap_users_to_zitadel, AttributeMapping, Config};
+use ldap_sync::{sync_ldap_users_to_zitadel, AttributeMapping, Config, FeatureFlag};
 use tempfile::TempDir;
 use test_log::test;
 use tokio::sync::OnceCell;
@@ -12,7 +12,7 @@ use url::Url;
 use uuid::{uuid, Uuid};
 use zitadel_rust_client::{
 	error::{Error as ZitadelError, TonicErrorCode},
-	Type, Zitadel,
+	UserType, Zitadel,
 };
 
 static CONFIG: OnceCell<Config> = OnceCell::const_new();
@@ -47,7 +47,7 @@ async fn test_e2e_simple_sync() {
 
 	assert_eq!(user.user_name, "simple@famedly.de");
 
-	if let Some(Type::Human(user)) = user.r#type {
+	if let Some(UserType::Human(user)) = user.r#type {
 		let profile = user.profile.expect("user lacks a profile");
 		let phone = user.phone.expect("user lacks a phone number)");
 		let email = user.email.expect("user lacks an email address");
@@ -132,6 +132,38 @@ async fn test_e2e_sync_disabled_user() {
 
 #[test(tokio::test)]
 #[test_log(default_log_filter = "debug")]
+async fn test_e2e_sso() {
+	let mut config = config().await.clone();
+	config.feature_flags.push(FeatureFlag::SsoLogin);
+
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"sso@famedly.de",
+		Some("+12015550124"),
+		"sso",
+		false,
+	)
+	.await;
+
+	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("sso@famedly.de")
+		.await
+		.expect("could not query Zitadel users")
+		.expect("could not find user");
+
+	let idps = zitadel.list_user_idps(user.id).await.expect("could not get user idps");
+
+	assert!(!idps.is_empty());
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
 async fn test_e2e_sync_change() {
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -159,7 +191,7 @@ async fn test_e2e_sync_change() {
 		.expect("missing Zitadel user");
 
 	match user.r#type {
-		Some(Type::Human(user)) => {
+		Some(UserType::Human(user)) => {
 			assert_eq!(user.phone.expect("phone missing").phone, "+12015550123");
 		}
 
@@ -332,7 +364,7 @@ async fn test_e2e_no_phone() {
 
 	let user = user.expect("could not find user");
 
-	if let Some(Type::Human(user)) = user.r#type {
+	if let Some(UserType::Human(user)) = user.r#type {
 		// Yes, I know, the codegen for the zitadel crate is
 		// pretty crazy. A missing phone number is represented as
 		// Some(Phone { phone: "", is_phone_Verified: _ })
