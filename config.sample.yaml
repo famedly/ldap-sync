@@ -4,7 +4,7 @@ ldap:
   url: ldap://ldap.example.invalid
   start_tls: false
   no_tls_verify: false
-  root_certificates_path: /opt/certs/test-ldap.crt
+  root_certificates_path: /opt/famedly-sync-agent/certs/test-ldap.crt
   # The base DN whose users to sync.
   base_dn: ou=testorg,dc=example,dc=org
   # The DN to bind - this should be a user with sufficient permissions
@@ -73,7 +73,7 @@ famedly:
   # The Famedly user endpoint to sync to.
   url: https://auth.famedly.de
   # The Famedly-provided service user credentials.
-  key_file: /opt/service-user.json
+  key_file: /opt/famedly-sync-agent/service-user.json
   # The organization whose users to sync.
   organization_id: 278274756195721220
   # The project to grant users access to.
@@ -89,4 +89,4 @@ feature_flags:
 # Path to the file that keeps track of previously synced entries -
 # this file should be persisted, otherwise users may become out of
 # sync.
-cache_path: /opt/famedly-sync.cache
+cache_path: /opt/famedly-sync-agent/famedly-sync.cache

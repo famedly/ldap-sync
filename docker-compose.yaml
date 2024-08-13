@@ -1,8 +1,8 @@
 services:
-  ldap-sync:
+  famedly-sync-agent:
     image: docker-oss.nexus.famedly.de/famedly-sync-agent:latest
     volumes:
       - type: bind
         source: ./opt
-        target: /opt
+        target: /opt/famedly-sync-agent
     network_mode: host

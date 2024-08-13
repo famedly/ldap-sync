@@ -1,5 +1,4 @@
 FROM ghcr.io/famedly/rust-container:nightly as builder
-ARG PROJECT_NAME=famedly-sync-agent
 ARG CARGO_NET_GIT_FETCH_WITH_CLI=true
 ARG FAMEDLY_CRATES_REGISTRY
 ARG CARGO_HOME
@@ -23,8 +22,8 @@ RUN cargo auditable build --release
 
 FROM debian:bookworm-slim
 RUN apt update && apt install ca-certificates -y
-RUN mkdir -p /opt/${PROJECT_NAME}
-WORKDIR /opt/${PROJECT_NAME}
-COPY --from=builder /app/target/release/${PROJECT_NAME} /usr/local/bin/${PROJECT_NAME}
-ENV FAMEDLY_LDAP_SYNC_CONFIG="/opt/config.yaml"
-ENTRYPOINT ["/usr/local/bin/ldap-sync"]
+RUN mkdir -p /opt/famedly-sync-agent
+WORKDIR /opt/famedly-sync-agent
+COPY --from=builder /app/target/release/ldap-sync /usr/local/bin/famedly-sync-agent
+ENV FAMEDLY_LDAP_SYNC_CONFIG="/opt/famedly-sync-agent/config.yaml"
+ENTRYPOINT ["/usr/local/bin/famedly-sync-agent"]

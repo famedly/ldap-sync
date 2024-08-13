@@ -30,7 +30,7 @@ docker compose up
 Or alternatively, without `docker compose`:
 
 ```
-docker run --rm -it --network host --volume ./opt:/opt docker-oss.nexus.famedly.de/famedly-sync-agent:latest
+docker run --rm -it --network host --volume ./opt:/opt/famedly-sync-agent docker-oss.nexus.famedly.de/famedly-sync-agent:latest
 ```
 
 ## Quirks & Edge Cases
