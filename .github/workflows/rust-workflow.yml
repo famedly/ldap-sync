@@ -10,7 +10,6 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  ADDITIONAL_PACKAGES: ""
 
 # Make sure there is no pipeline running uselessly.
 concurrency:
@@ -21,7 +20,7 @@ concurrency:
 jobs:
   simple-checks:
     container: ghcr.io/famedly/rust-container:nightly
-    runs-on: ubuntu-latest-16core
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout current repository
       uses: actions/checkout@v3
@@ -37,7 +36,8 @@ jobs:
     - name: Caching
       uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
       with:
-        workspaces: "head -> target"
+        cache-on-failure: true
+        cache-all-crates: true
 
     - name: Rustfmt
       shell: bash
@@ -65,7 +65,7 @@ jobs:
       run: typos --exclude '*.key' --exclude '*.crt' --exclude '*.csr' --exclude '*.srl'
 
   tests:
-    runs-on: ubuntu-latest-16core
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout current repository
       uses: actions/checkout@v3
@@ -78,24 +78,54 @@ jobs:
         gitlab_user: ${{ secrets.GITLAB_USER }}
         gitlab_pass: ${{ secrets.GITLAB_PASS }}
 
-    - name: Install additional cargo tooling
-      shell: bash
-      run: cargo install cargo-nextest --locked
+    - name: Add llvm-tools rust component
+      run: rustup component add llvm-tools-preview --toolchain stable-x86_64-unknown-linux-gnu
 
     - name: Caching
       uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
       with:
-        workspaces: "head -> target"
+        cache-on-failure: true
+        cache-all-crates: true
+
+    - name: Install additional cargo tooling
+      shell: bash
+      run: cargo install cargo-nextest cargo-llvm-cov --locked
 
     - name: Test
       timeout-minutes: 20
       shell: bash
       working-directory: head
-      run: cargo nextest run --no-fail-fast --workspace
+      run: |
+        docker compose --project-directory ./tests/environment down -v
+        cargo llvm-cov nextest --no-fail-fast --workspace --lcov --output-path '${{github.workspace}}/lcov.info'
+        sed "s|$PWD/||g" -i '${{github.workspace}}/lcov.info'
 
     - name: Get docker logs on failure
       shell: bash
       if: failure()
-      working-directory: base
+      working-directory: head
       run: |
         docker compose --project-directory ./tests/environment logs
+
+    - name: Setup LCOV
+      uses: hrishikesh-kadam/setup-lcov@6c1aa0cc9e1c02f9f58f01ac599f1064ccc83470
+
+    - name: Report code coverage
+      uses: zgosalvez/github-actions-report-lcov@fea161ae6d85807479ea109d42259c9165558a64
+      with:
+        working-directory: ./head/
+        coverage-files: ${{github.workspace}}/lcov.info
+        artifact-name: code-coverage-report
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        update-comment: true
+
+  # review_app_coverage:
+  #   if: github.event_name == 'pull_request'
+  #   needs: [tests]
+  #   secrets: inherit
+  #   uses: famedly/frontend-ci-templates/.github/workflows/review-app.yml@main
+  #   with:
+  #     projectname: "ldap-sync-coverage"
+  #     pr: ${{ github.event.pull_request.number }}
+  #     environment: "review"
+  #     artifact-name: "code-coverage-report"
