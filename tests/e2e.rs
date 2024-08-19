@@ -765,8 +765,7 @@ async fn open_zitadel_connection() -> Zitadel {
 async fn config() -> &'static Config {
 	CONFIG
 		.get_or_init(|| async {
-			let mut config = Config::from_file(Path::new("tests/environment/config.yaml"))
-				.await
+			let mut config = Config::new(Path::new("tests/environment/config.yaml"))
 				.expect("failed to parse test env file");
 
 			let tempdir = TEMPDIR

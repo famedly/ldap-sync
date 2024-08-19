@@ -9,10 +9,28 @@ use ldap_poller::{config::TLSConfig, AttributeConfig, CacheMethod, ConnectionCon
 use serde::Deserialize;
 use url::Url;
 
+/// App prefix for env var configuration
+const ENV_VAR_CONFIG_PREFIX: &str = "FAMEDLY_LDAP_SYNC";
+/// Separator for setting a list using env vars
+const ENV_VAR_LIST_SEP: &str = " ";
+
 impl Config {
-	/// Read the config from a file
-	pub async fn from_file(path: &Path) -> Result<Self> {
-		let config: Config = serde_yaml::from_slice(&tokio::fs::read(path).await?)?;
+	/// Create new config from file and env var
+	pub fn new(path: &Path) -> Result<Self> {
+		let config_builder = config::Config::builder()
+			.add_source(config::File::from(path).required(false))
+			.add_source(
+				config::Environment::with_prefix(ENV_VAR_CONFIG_PREFIX)
+					.separator("__")
+					.list_separator(ENV_VAR_LIST_SEP)
+					.with_list_parse_key("ldap.attributes.disable_bitmasks")
+					.with_list_parse_key("feature_flags")
+					.try_parsing(true),
+			);
+
+		let config_builder = config_builder.build()?;
+
+		let config: Config = config_builder.try_deserialize()?;
 		config.validate()
 	}
 
@@ -66,13 +84,14 @@ fn validate_famedly_url(url: Url) -> Result<Url> {
 }
 
 /// Configuration for the sync client
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
 	/// LDAP-specific configuration
 	pub ldap: LdapConfig,
 	/// Configuration related to Famedly Zitadel
 	pub famedly: FamedlyConfig,
 	/// Opt-in features
+	#[serde(default)]
 	pub feature_flags: Set<FeatureFlag>,
 	/// Where to cache the last known LDAP state
 	pub cache_path: PathBuf,
@@ -81,7 +100,7 @@ pub struct Config {
 }
 
 /// LDAP-specific configuration
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct LdapConfig {
 	/// The URL of the LDAP/AD server
 	pub url: Url,
@@ -165,7 +184,7 @@ impl From<LdapConfig> for ldap_poller::Config {
 
 /// A mapping from the mostly free-form LDAP attributes to attribute
 /// names as used by famedly
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct LdapAttributesMapping {
 	/// Attribute for the user's first name
 	pub first_name: AttributeMapping,
@@ -184,6 +203,7 @@ pub struct LdapAttributesMapping {
 	pub status: AttributeMapping,
 	/// Marks an account as disabled (for example userAccountControl: bit flag
 	/// ACCOUNTDISABLE would be 2)
+	#[serde(default)]
 	pub disable_bitmasks: Vec<i32>,
 	/// Last modified
 	pub last_modified: Option<AttributeMapping>,
@@ -192,7 +212,7 @@ pub struct LdapAttributesMapping {
 /// How an attribute should be defined in config - it can either be a
 /// raw string, *or* it can be a struct defining both an attribute
 /// name and whether the attribute should be treated as binary.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum AttributeMapping {
 	/// An attribute that's defined without specifying whether it is
@@ -226,7 +246,7 @@ impl Display for AttributeMapping {
 }
 
 /// The LDAP TLS configuration
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct LdapTlsConfig {
 	/// Path to the client key; if not specified, it will be assumed
 	/// that the server is configured not to verify client
@@ -256,7 +276,7 @@ pub struct LdapTlsConfig {
 }
 
 /// Configuration related to Famedly Zitadel
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct FamedlyConfig {
 	/// The URL for Famedly authentication
 	pub url: Url,
@@ -292,7 +312,10 @@ pub enum FeatureFlag {
 #[cfg(test)]
 mod tests {
 	#![allow(clippy::expect_used, clippy::unwrap_used)]
+	use std::{env, fs::File, io::Write};
+
 	use indoc::indoc;
+	use tempfile::TempDir;
 
 	use super::*;
 
@@ -339,6 +362,68 @@ mod tests {
 		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
 	}
 
+	fn example_env_vars() -> Vec<(String, String)> {
+		let config: serde_yaml::Value =
+			serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config");
+		let mut prefix_stack = Vec::new();
+		get_env_vars_from_map(
+			config.as_mapping().expect("Expected a map but it isn't"),
+			&mut prefix_stack,
+		)
+	}
+
+	fn get_string(value: &serde_yaml::Value) -> String {
+		match value {
+			serde_yaml::Value::Bool(value) => value.to_string(),
+			serde_yaml::Value::Number(value) => value.to_string(),
+			serde_yaml::Value::String(value) => value.to_string(),
+			serde_yaml::Value::Sequence(arr) => {
+				let mut values: Vec<String> = Vec::new();
+				for value in arr {
+					values.push(get_string(value));
+				}
+				values.join(ENV_VAR_LIST_SEP)
+			}
+			_ => "".to_owned(),
+		}
+	}
+
+	fn get_env_vars_from_map(
+		map: &serde_yaml::Mapping,
+		prefix_stack: &mut Vec<String>,
+	) -> Vec<(String, String)> {
+		let mut ret = Vec::new();
+		for (key, value) in map {
+			let key = key.as_str().expect("Key should be a str").to_owned().to_uppercase();
+			if value.is_mapping() {
+				prefix_stack.push(key);
+				ret.append(&mut get_env_vars_from_map(value.as_mapping().unwrap(), prefix_stack));
+				let _ = prefix_stack.pop();
+			} else {
+				let var_key = if prefix_stack.is_empty() {
+					format!("{ENV_VAR_CONFIG_PREFIX}__{key}")
+				} else {
+					format!(
+						"{ENV_VAR_CONFIG_PREFIX}__{}__{key}",
+						prefix_stack.join("__").to_uppercase()
+					)
+				};
+				let var_value = get_string(value);
+				ret.push((var_key, var_value));
+			}
+		}
+		ret
+	}
+
+	fn create_config_file(dir: &Path) -> PathBuf {
+		let file_path = dir.join("config.yaml");
+		let mut config_file = File::create(&file_path).expect("failed to create config file");
+		config_file
+			.write_all(EXAMPLE_CONFIG.as_bytes())
+			.expect("Failed to write config file content");
+		file_path
+	}
+
 	#[test]
 	fn test_famedly_url_validate_valid() {
 		let url = Url::parse("https://famedly.de").expect("invalid url");
@@ -382,8 +467,76 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_sample_config() {
-		let config = Config::from_file(Path::new("./config.sample.yaml")).await;
+		let config = Config::new(Path::new("./config.sample.yaml"));
 
 		assert!(config.is_ok(), "Invalid config: {:?}", config);
+	}
+
+	#[test]
+	fn test_config_from_file() {
+		let tempdir = TempDir::new().expect("failed to initialize cache dir");
+		let file_path = create_config_file(tempdir.path());
+		let config = Config::new(file_path.as_path()).expect("Failed to create config object");
+
+		assert_eq!(example_config(), config);
+	}
+
+	#[test]
+	fn test_config_env_var_override() {
+		let tempdir = TempDir::new().expect("failed to initialize cache dir");
+		let file_path = create_config_file(tempdir.path());
+
+		let env_var_name = format!("{ENV_VAR_CONFIG_PREFIX}__LDAP__TIMEOUT");
+		env::set_var(&env_var_name, "1");
+
+		let loaded_config =
+			Config::new(file_path.as_path()).expect("Failed to create config object");
+		let mut sample_config = example_config();
+
+		sample_config.ldap.timeout = 1;
+
+		env::remove_var(env_var_name);
+
+		assert_eq!(sample_config, loaded_config);
+	}
+
+	#[test]
+	fn test_no_config_file() {
+		let env_vars = example_env_vars();
+		for (key, value) in &env_vars {
+			if !value.is_empty() {
+				env::set_var(key, value);
+			}
+		}
+		let config = Config::new(Path::new("no_file.yaml"));
+
+		for (key, _) in &env_vars {
+			env::remove_var(key);
+		}
+
+		assert_eq!(example_config(), config.expect("Failed to create config object"));
+	}
+
+	#[test]
+	fn test_config_env_var_feature_flag() {
+		let tempdir = TempDir::new().expect("failed to initialize cache dir");
+		let file_path = create_config_file(tempdir.path());
+
+		let env_var_name = format!("{ENV_VAR_CONFIG_PREFIX}__FEATURE_FLAGS");
+		env::set_var(&env_var_name, "sso_login verify_email verify_phone dry_run deactivate_only");
+
+		let loaded_config =
+			Config::new(file_path.as_path()).expect("Failed to create config object");
+		let mut sample_config = example_config();
+
+		sample_config.feature_flags.push(FeatureFlag::SsoLogin);
+		sample_config.feature_flags.push(FeatureFlag::VerifyEmail);
+		sample_config.feature_flags.push(FeatureFlag::VerifyPhone);
+		sample_config.feature_flags.push(FeatureFlag::DryRun);
+		sample_config.feature_flags.push(FeatureFlag::DeactivateOnly);
+
+		env::remove_var(env_var_name);
+
+		assert_eq!(sample_config, loaded_config);
 	}
 }

@@ -23,7 +23,7 @@ async fn run_sync() -> anyhow::Result<()> {
 		let config_path = std::env::var("FAMEDLY_LDAP_SYNC_CONFIG").unwrap_or("config.yaml".into());
 		let config_path = Path::new(&config_path);
 
-		match Config::from_file(config_path).await {
+		match Config::new(config_path) {
 			Ok(config) => config,
 			Err(error) => {
 				// Tracing subscriber is not yet configured, so we

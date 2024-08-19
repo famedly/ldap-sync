@@ -37,6 +37,26 @@ docker run --rm -it --network host --volume ./opt:/opt/famedly-sync-agent docker
 
 When this feature is set the ldap-sync will only synchronize the deactivated user. All the changes made on the ldap will be written to the cache as if they where applied. Therefore, only the deactivation changes will be applied to Zitadel but **all the other changes will be lost**
 
+### Configuration
+
+The ldap-sync expects a configuration file located at `./config.yaml`. The default path can be changed setting the new path to the environment variable `FAMEDLY_LDAP_SYNC_CONFIG`.
+
+Also, individual configuration items and the whole configuration can be set using environment variables. For example, the following configuration could be set like this:
+
+Configuration yaml
+```yaml
+ldap:
+  url: ldap://localhost:1389
+```
+
+```bash
+FAMEDLY_LDAP_SYNC__LDAP__URL="ldap://localhost:1389"
+```
+
+Note that the environment variable name always starts with the prefix `FAMEDLY_LDAP_SYNC` followed by keys separated by double underscores (`__`).
+
+Some configuration items take a list of values. In this cases the values should be separated by space. **If an empty list is desired the variable shouldn't be created.**
+
 ## Quirks & Edge Cases
 
 - Changing a user's LDAP id (the attribute from the `user_id` setting)
