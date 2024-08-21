@@ -33,5 +33,5 @@ famedly:
   idp_id: @IDP_ID@
 
 feature_flags:
-  - SsoLogin
+  - sso_login
 cache_path: ./test

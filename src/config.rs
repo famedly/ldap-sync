@@ -268,6 +268,7 @@ pub type Set<T> = Vec<T>;
 
 /// Opt-in features
 #[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
 pub enum FeatureFlag {
 	/// If SSO should be activated. It requires idpId, idpUserName, idpUserId
 	/// mapping
