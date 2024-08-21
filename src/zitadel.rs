@@ -152,6 +152,11 @@ impl Zitadel {
 	/// Update a Zitadel user
 	#[allow(clippy::unused_async, unused_variables)]
 	async fn update_user(&self, old: &User, new: &User) -> Result<()> {
+		if self.config.dry_run() {
+			tracing::info!("Not updating user due to dry run: {:?} -> {:?}", old, new);
+			return Ok(());
+		}
+
 		let Some(user_id) = self.get_user_id(old).await? else {
 			bail!("could not find user `{}` to update", old.email);
 		};
@@ -231,6 +236,14 @@ impl Zitadel {
 
 	/// Delete a Zitadel user given only their LDAP id
 	async fn delete_user_by_id(&self, ldap_id: &[u8]) -> Result<()> {
+		if self.config.dry_run() {
+			tracing::info!(
+				"Not deleting user `{}` due to dry run",
+				String::from_utf8_lossy(ldap_id)
+			);
+			return Ok(());
+		}
+
 		let uid = String::from_utf8(ldap_id.to_vec())?;
 		let user = self
 			.client
@@ -262,6 +275,11 @@ impl Zitadel {
 
 	/// Delete a Zitadel user
 	async fn delete_user(&self, user: &User) -> Result<()> {
+		if self.config.dry_run() {
+			tracing::info!("Not deleting user due to dry run: {:?}", user);
+			return Ok(());
+		}
+
 		if let Some(user_id) = self.get_user_id(user).await? {
 			self.client.remove_user(user_id).await?;
 		} else {
@@ -275,6 +293,11 @@ impl Zitadel {
 
 	/// Import a user into Zitadel
 	async fn import_user(&self, user: &User) -> Result<()> {
+		if self.config.dry_run() {
+			tracing::info!("Not importing user due to dry run: {:?}", user);
+			return Ok(());
+		}
+
 		let new_user_id = self
 			.client
 			.create_human_user(&self.config.famedly.organization_id, user.clone().into())

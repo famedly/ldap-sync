@@ -492,6 +492,65 @@ async fn test_e2e_binary_attr_valid_utf8() {
 	}
 }
 
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_dry_run() {
+	let mut dry_run_config = config().await.clone();
+	dry_run_config.feature_flags.push(FeatureFlag::DryRun);
+
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby",
+		"dry_run@famedly.de",
+		Some("+12015550123"),
+		"dry_run",
+		false,
+	)
+	.await;
+
+	let zitadel = open_zitadel_connection().await;
+
+	// Assert the user does not sync, because this is a dry run
+	sync_ldap_users_to_zitadel(dry_run_config.clone()).await.expect("syncing failed");
+	assert!(zitadel.get_user_by_login_name("dry_run@famedly.de").await.is_err_and(
+		|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound),
+	));
+
+	// Actually sync the user so we can test other changes
+	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+
+	// Assert that a change in phone number does not sync
+	ldap.change_user("dry_run", vec![("telephoneNumber", HashSet::from(["+12015550124"]))]).await;
+	sync_ldap_users_to_zitadel(dry_run_config.clone()).await.expect("syncing failed");
+	let user = zitadel
+		.get_user_by_login_name("dry_run@famedly.de")
+		.await
+		.expect("could not query Zitadel users")
+		.expect("could not find user");
+
+	assert!(
+		matches!(user.r#type, Some(UserType::Human(user)) if user.phone.as_ref().expect("phone missing").phone == "+12015550123")
+	);
+
+	// Assert that disabling a user does not sync
+	ldap.change_user("dry_run", vec![("shadowFlag", HashSet::from(["514"]))]).await;
+	sync_ldap_users_to_zitadel(dry_run_config.clone()).await.expect("syncing failed");
+	assert!(zitadel
+		.get_user_by_login_name("dry_run@famedly.de")
+		.await
+		.is_ok_and(|user| user.is_some()));
+
+	// Assert that a user deletion does not sync
+	ldap.delete_user("dry_run").await;
+	sync_ldap_users_to_zitadel(dry_run_config).await.expect("syncing failed");
+	assert!(zitadel
+		.get_user_by_login_name("dry_run@famedly.de")
+		.await
+		.is_ok_and(|user| user.is_some()));
+}
+
 struct Ldap {
 	client: LdapClient,
 }

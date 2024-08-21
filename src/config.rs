@@ -40,6 +40,12 @@ impl Config {
 	pub fn require_sso_login(&self) -> bool {
 		self.feature_flags.contains(&FeatureFlag::SsoLogin)
 	}
+
+	/// Whether dry run is enabled
+	#[must_use]
+	pub fn dry_run(&self) -> bool {
+		self.feature_flags.contains(&FeatureFlag::DryRun)
+	}
 }
 
 /// Validate the famedly URL
@@ -270,6 +276,8 @@ pub enum FeatureFlag {
 	VerifyEmail,
 	/// If users should verify the phone. Users will receive a verification sms
 	VerifyPhone,
+	/// If set, only log changes instead of writing anything
+	DryRun,
 }
 
 #[cfg(test)]

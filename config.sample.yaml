@@ -85,6 +85,7 @@ feature_flags:
   - verify_email    # Whether to ask users to verify their email addresses post sync
   - verify_phone    # Whether to ask users to verify their phone numbers post sync
   # - sso_login     # Whether to enable SSO login - Please note that his has some drawbacks and limitations, see the help center article for more information
+  # - dry_run       # Disable syncing users to Zitadel - Intended to ensure syncs are working before productive deployment
 
 # Path to the file that keeps track of previously synced entries -
 # this file should be persisted, otherwise users may become out of

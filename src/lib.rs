@@ -26,13 +26,18 @@ pub async fn sync_ldap_users_to_zitadel(config: Config) -> Result<()> {
 
 	let sync_handle: tokio::task::JoinHandle<Result<_>> = tokio::spawn(async move {
 		ldap_client.sync_once(None).await.context("failed to sync/fetch data from LDAP")?;
-		let cache = ldap_client.persist_cache().await;
-		tokio::fs::write(
-			&config.cache_path,
-			bincode::serialize(&cache).context("failed to serialize cache")?,
-		)
-		.await
-		.context("failed to write cache")?;
+
+		if config.dry_run() {
+			tracing::warn!("Not writing ldap cache during a dry run");
+		} else {
+			let cache = ldap_client.persist_cache().await;
+			tokio::fs::write(
+				&config.cache_path,
+				bincode::serialize(&cache).context("failed to serialize cache")?,
+			)
+			.await
+			.context("failed to write cache")?;
+		}
 
 		tracing::info!("Finished syncing LDAP data");
 
