@@ -113,19 +113,21 @@ impl Zitadel {
 			}
 		}
 
-		for user in enabled {
-			let status = self.import_user(&user).await;
+		if !self.config.deactivate_only() {
+			for user in enabled {
+				let status = self.import_user(&user).await;
 
-			if let Err(error) = status {
-				tracing::error!("Failed to re-create user `{}`: {}", user.log_name(), error);
+				if let Err(error) = status {
+					tracing::error!("Failed to re-create user `{}`: {}", user.log_name(), error);
+				}
 			}
-		}
 
-		for (old, new) in changed {
-			let status = self.update_user(&old, &new).await;
+			for (old, new) in changed {
+				let status = self.update_user(&old, &new).await;
 
-			if let Err(error) = status {
-				tracing::error!("Failed to update user `{}`: {}", new.log_name(), error);
+				if let Err(error) = status {
+					tracing::error!("Failed to update user `{}`: {}", new.log_name(), error);
+				}
 			}
 		}
 

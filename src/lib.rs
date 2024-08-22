@@ -24,6 +24,8 @@ pub async fn sync_ldap_users_to_zitadel(config: Config) -> Result<()> {
 	let zitadel = Zitadel::new(&config).await?;
 	let (mut ldap_client, ldap_receiver) = Ldap::new(config.clone().ldap.into(), cache);
 
+	let deactivate_only = config.deactivate_only();
+
 	let sync_handle: tokio::task::JoinHandle<Result<_>> = tokio::spawn(async move {
 		ldap_client.sync_once(None).await.context("failed to sync/fetch data from LDAP")?;
 
@@ -48,9 +50,12 @@ pub async fn sync_ldap_users_to_zitadel(config: Config) -> Result<()> {
 
 	sync_handle.await??;
 
-	zitadel.import_new_users(added).await?;
 	zitadel.update_users(changed).await?;
-	zitadel.delete_users(removed).await?;
+
+	if !deactivate_only {
+		zitadel.import_new_users(added).await?;
+		zitadel.delete_users(removed).await?;
+	}
 
 	Ok(())
 }

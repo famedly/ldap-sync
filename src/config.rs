@@ -46,6 +46,12 @@ impl Config {
 	pub fn dry_run(&self) -> bool {
 		self.feature_flags.contains(&FeatureFlag::DryRun)
 	}
+
+	/// Whether deactivate only is enabled
+	#[must_use]
+	pub fn deactivate_only(&self) -> bool {
+		self.feature_flags.contains(&FeatureFlag::DeactivateOnly)
+	}
 }
 
 /// Validate the famedly URL
@@ -279,6 +285,8 @@ pub enum FeatureFlag {
 	VerifyPhone,
 	/// If set, only log changes instead of writing anything
 	DryRun,
+	/// If only deactivated users should be synced
+	DeactivateOnly,
 }
 
 #[cfg(test)]

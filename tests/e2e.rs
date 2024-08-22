@@ -551,6 +551,116 @@ async fn test_e2e_dry_run() {
 		.is_ok_and(|user| user.is_some()));
 }
 
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_sync_deactivated_only() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"disable_disable_only@famedly.de",
+		Some("+12015550124"),
+		"disable_disable_only",
+		false,
+	)
+	.await;
+
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"changed_disable_only@famedly.de",
+		Some("+12015550124"),
+		"changed_disable_only",
+		false,
+	)
+	.await;
+
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"deleted_disable_only@famedly.de",
+		Some("+12015550124"),
+		"deleted_disable_only",
+		false,
+	)
+	.await;
+
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"reenabled_disable_only@famedly.de",
+		Some("+12015550124"),
+		"reenabled_disable_only",
+		false,
+	)
+	.await;
+
+	ldap.change_user("reenabled_disable_only", vec![("shadowFlag", HashSet::from(["514"]))]).await;
+
+	let mut config = config().await.clone();
+
+	sync_ldap_users_to_zitadel(config.clone()).await.expect("syncing failed");
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel.get_user_by_login_name("disable_disable_only@famedly.de").await;
+	assert!(user.is_ok_and(|u| u.is_some()));
+	let user = zitadel.get_user_by_login_name("changed_disable_only@famedly.de").await;
+	assert!(user.is_ok_and(|u| u.is_some()));
+	let user = zitadel.get_user_by_login_name("deleted_disable_only@famedly.de").await;
+	assert!(user.is_ok_and(|u| u.is_some()));
+	let user = zitadel.get_user_by_login_name("reenabled_disable_only@famedly.de").await;
+	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
+
+	config.feature_flags.push(FeatureFlag::DeactivateOnly);
+
+	ldap.create_user(
+		"Bob",
+		"Tables",
+		"Bobby2",
+		"created_disable_only@famedly.de",
+		Some("+12015550124"),
+		"created_disable_only",
+		false,
+	)
+	.await;
+
+	ldap.change_user("disable_disable_only", vec![("shadowFlag", HashSet::from(["514"]))]).await;
+	ldap.change_user(
+		"changed_disable_only",
+		vec![("telephoneNumber", HashSet::from(["+12015550123"]))],
+	)
+	.await;
+	ldap.delete_user("deleted_disable_only").await;
+	ldap.change_user("reenabled_disable_only", vec![("shadowFlag", HashSet::from(["512"]))]).await;
+	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+
+	let user = zitadel.get_user_by_login_name("disable_disable_only@famedly.de").await;
+	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
+	let user = zitadel.get_user_by_login_name("created_disable_only@famedly.de").await;
+	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
+	let user = zitadel.get_user_by_login_name("deleted_disable_only@famedly.de").await;
+	assert!(user.is_ok_and(|u| u.is_some()));
+	let user = zitadel.get_user_by_login_name("reenabled_disable_only@famedly.de").await;
+	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
+
+	let user = zitadel
+		.get_user_by_login_name("changed_disable_only@famedly.de")
+		.await
+		.expect("could not query Zitadel users")
+		.expect("missing Zitadel user");
+
+	match user.r#type {
+		Some(UserType::Human(user)) => {
+			assert_eq!(user.phone.expect("phone missing").phone, "+12015550124");
+		}
+
+		_ => panic!("human user became a machine user?"),
+	}
+}
+
 struct Ldap {
 	client: LdapClient,
 }
