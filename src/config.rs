@@ -371,4 +371,11 @@ mod tests {
 			vec!["*"]
 		);
 	}
+
+	#[tokio::test]
+	async fn test_sample_config() {
+		let config = Config::from_file(Path::new("./config.sample.yaml")).await;
+
+		assert!(config.is_ok(), "Invalid config: {:?}", config);
+	}
 }

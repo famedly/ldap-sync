@@ -2,9 +2,6 @@ ldap:
   # The URl of the ldap server to be synced.
   # Using `ldaps` as the scheme will enable TLS.
   url: ldap://ldap.example.invalid
-  start_tls: false
-  no_tls_verify: false
-  root_certificates_path: /opt/famedly-sync-agent/certs/test-ldap.crt
   # The base DN whose users to sync.
   base_dn: ou=testorg,dc=example,dc=org
   # The DN to bind - this should be a user with sufficient permissions
@@ -51,6 +48,7 @@ ldap:
     # not have a phone number this will be silently ignored
     phone: "telephoneNumber"
 
+  # TLS config is optional, and only needs to be set if TLS is needed
   tls:
     # The client TLS key/certificate. If both this and the certificate
     # are unset, the client will not send any certificates.
@@ -79,7 +77,7 @@ famedly:
   # The project to grant users access to.
   project_id: 278274945274880004
   # The identity provider ID to enable SSO login for
-  idp_id: tbd
+  idp_id: 281430143275106308
 
 feature_flags:
   - verify_email    # Whether to ask users to verify their email addresses post sync

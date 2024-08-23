@@ -69,6 +69,10 @@ Tests can then be run using:
 cargo nextest run [--no-fail-fast] [-E 'test(<specific_test_to_run>)']
 ```
 
+Note that tests need to be executed from the repository root since we
+do not currently implement anything to find files required for tests
+relative to it.
+
 In addition, a modern docker with the `compose` subcommand is
 required - importantly, this is not true for many distro docker
 packages. Firewalls also need to be configured to allow container <->
