@@ -21,7 +21,7 @@ WORKDIR /app
 RUN cargo auditable build --release
 
 FROM debian:bookworm-slim
-RUN apt update && apt install ca-certificates -y
+RUN apt update && apt install ca-certificates curl -y
 RUN mkdir -p /opt/famedly-sync-agent
 WORKDIR /opt/famedly-sync-agent
 COPY --from=builder /app/target/release/ldap-sync /usr/local/bin/famedly-sync-agent
