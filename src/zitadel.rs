@@ -1,5 +1,5 @@
 //! Helper functions for submitting data to Zitadel
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Context, Result};
 use itertools::Itertools;
 use ldap_poller::ldap3::SearchEntry;
 use uuid::{uuid, Uuid};
@@ -33,7 +33,7 @@ impl Zitadel {
 		let client =
 			ZitadelClient::new(config.famedly.url.clone(), config.famedly.key_file.clone())
 				.await
-				.map_err(|message| anyhow!("failed to configure zitadel client: {}", message))?;
+				.context("failed to configure zitadel client")?;
 
 		Ok(Self { client, config: config.clone() })
 	}
