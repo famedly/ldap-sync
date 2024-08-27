@@ -18,53 +18,12 @@ concurrency:
 
 # Defined CI jobs.
 jobs:
-  simple-checks:
-    container: ghcr.io/famedly/rust-container:nightly
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout current repository
-      uses: actions/checkout@v3
-      with:
-        path: head
+  rust-workflow:
+    uses: famedly/backend-build-workflows/.github/workflows/rust-workflow.yml@tlater/coverage
+    with:
+      runs-on: ubuntu-latest
 
-    - uses: famedly/backend-build-workflows/.github/actions/rust-prepare@main
-      with:
-        gitlab_ssh: ${{ secrets.CI_SSH_PRIVATE_KEY}}
-        gitlab_user: ${{ secrets.GITLAB_USER }}
-        gitlab_pass: ${{ secrets.GITLAB_PASS }}
-
-    - name: Caching
-      uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
-      with:
-        cache-on-failure: true
-        cache-all-crates: true
-
-    - name: Rustfmt
-      shell: bash
-      working-directory: head
-      run: cargo +${NIGHTLY_VERSION} fmt -- --check
-
-    - name: Clippy
-      working-directory: head
-      shell: bash
-      run: cargo +${NIGHTLY_VERSION} clippy --workspace --all-targets -- -D warnings
-
-    - name: Doc-test
-      shell: bash
-      working-directory: head
-      run: cargo +${NIGHTLY_VERSION} test --doc --workspace --verbose
-
-    - name: Udeps
-      shell: bash
-      working-directory: head
-      run: cargo +${NIGHTLY_VERSION} udeps
-
-    - name: Typos
-      shell: bash
-      working-directory: head
-      run: typos --exclude '*.key' --exclude '*.crt' --exclude '*.csr' --exclude '*.srl'
-
-  tests:
+  test:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout current repository
@@ -97,8 +56,8 @@ jobs:
       working-directory: head
       run: |
         docker compose --project-directory ./tests/environment down -v
-        cargo llvm-cov nextest --no-fail-fast --workspace --lcov --output-path '${{github.workspace}}/lcov.info'
-        sed "s|$PWD/||g" -i '${{github.workspace}}/lcov.info'
+        cargo llvm-cov nextest --no-fail-fast --workspace --lcov --output-path lcov.info
+        sed "s|$PWD/||g" -i lcov.info
 
     - name: Get docker logs on failure
       shell: bash
@@ -107,25 +66,8 @@ jobs:
       run: |
         docker compose --project-directory ./tests/environment logs
 
-    - name: Setup LCOV
-      uses: hrishikesh-kadam/setup-lcov@6c1aa0cc9e1c02f9f58f01ac599f1064ccc83470
-
-    - name: Report code coverage
-      uses: zgosalvez/github-actions-report-lcov@fea161ae6d85807479ea109d42259c9165558a64
+    - name: Upload lcov data
+      uses: actions/upload-artifact@v4
       with:
-        working-directory: ./head/
-        coverage-files: ${{github.workspace}}/lcov.info
-        artifact-name: code-coverage-report
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        update-comment: true
-
-  # review_app_coverage:
-  #   if: github.event_name == 'pull_request'
-  #   needs: [tests]
-  #   secrets: inherit
-  #   uses: famedly/frontend-ci-templates/.github/workflows/review-app.yml@main
-  #   with:
-  #     projectname: "ldap-sync-coverage"
-  #     pr: ${{ github.event.pull_request.number }}
-  #     environment: "review"
-  #     artifact-name: "code-coverage-report"
+        name: coverage-data
+        path: head/lcov.info
