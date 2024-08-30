@@ -33,6 +33,10 @@ Or alternatively, without `docker compose`:
 docker run --rm -it --network host --volume ./opt:/opt/famedly-sync-agent docker-oss.nexus.famedly.de/famedly-sync-agent:latest
 ```
 
+### Deactivate only feature
+
+When this feature is set the ldap-sync will only synchronize the deactivated user. All the changes made on the ldap will be written to the cache as if they where applied. Therefore, only the deactivation changes will be applied to Zitadel but **all the other changes will be lost**
+
 ## Quirks & Edge Cases
 
 - Changing a user's LDAP id (the attribute from the `user_id` setting)
