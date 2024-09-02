@@ -4,7 +4,7 @@ use std::{collections::HashSet, path::Path, time::Duration};
 
 use base64::prelude::{Engine, BASE64_STANDARD};
 use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings, Mod};
-use ldap_sync::{sync_ldap_users_to_zitadel, AttributeMapping, Config, FeatureFlag};
+use ldap_sync::{perform_sync, AttributeMapping, Config, FeatureFlag};
 use tempfile::TempDir;
 use test_log::test;
 use tokio::sync::OnceCell;
@@ -33,7 +33,7 @@ async fn test_e2e_simple_sync() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -65,7 +65,7 @@ async fn test_e2e_simple_sync() {
 
 	let preferred_username = zitadel
 		.get_user_metadata(
-			Some(config().await.famedly.organization_id.clone()),
+			Some(config().await.zitadel_config.organization_id.clone()),
 			&user.id,
 			"preferred_username",
 		)
@@ -77,7 +77,7 @@ async fn test_e2e_simple_sync() {
 
 	let localpart = zitadel
 		.get_user_metadata(
-			Some(config().await.famedly.organization_id.clone()),
+			Some(config().await.zitadel_config.organization_id.clone()),
 			&user.id,
 			"localpart",
 		)
@@ -86,7 +86,7 @@ async fn test_e2e_simple_sync() {
 	assert_eq!(localpart, Some(uuid.to_string()));
 
 	let grants = zitadel
-		.list_user_grants(&config().await.famedly.organization_id, &user.id)
+		.list_user_grants(&config().await.zitadel_config.organization_id, &user.id)
 		.await
 		.expect("failed to get user grants");
 
@@ -109,7 +109,7 @@ async fn test_e2e_sync_disabled_user() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel.get_user_by_login_name("disabled_user@famedly.de").await;
@@ -148,7 +148,7 @@ async fn test_e2e_sso() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+	perform_sync(&config).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -177,11 +177,11 @@ async fn test_e2e_sync_change() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	ldap.change_user("change", vec![("telephoneNumber", HashSet::from(["+12015550123"]))]).await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -214,18 +214,18 @@ async fn test_e2e_sync_disable_and_reenable() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel.get_user_by_login_name("disable@famedly.de").await;
 	assert!(user.is_ok_and(|u| u.is_some()));
 
 	ldap.change_user("disable", vec![("shadowFlag", HashSet::from(["514"]))]).await;
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 	let user = zitadel.get_user_by_login_name("disable@famedly.de").await;
 	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
 
 	ldap.change_user("disable", vec![("shadowFlag", HashSet::from(["512"]))]).await;
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel.get_user_by_login_name("disable@famedly.de").await;
 	assert!(user.is_ok_and(|u| u.is_some()));
@@ -246,12 +246,12 @@ async fn test_e2e_sync_email_change() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	ldap.change_user("email_change", vec![("mail", HashSet::from(["email_changed@famedly.de"]))])
 		.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel.get_user_by_login_name("email_changed@famedly.de").await;
@@ -274,7 +274,7 @@ async fn test_e2e_sync_deletion() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user =
@@ -283,7 +283,7 @@ async fn test_e2e_sync_deletion() {
 
 	ldap.delete_user("deleted").await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	let user = zitadel.get_user_by_login_name("deleted@famedly.de").await;
 	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
@@ -293,7 +293,11 @@ async fn test_e2e_sync_deletion() {
 #[test_log(default_log_filter = "debug")]
 async fn test_e2e_ldaps() {
 	let mut config = config().await.clone();
-	config.ldap.url = Url::parse("ldaps://localhost:1636").expect("invalid ldaps url");
+	if let Some(ref mut ldap_config) = config.source_ldap {
+		ldap_config.url = Url::parse("ldaps://localhost:1636").expect("invalid ldaps url");
+	} else {
+		panic!("ldap must be configured for this test");
+	}
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -307,7 +311,7 @@ async fn test_e2e_ldaps() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+	perform_sync(&config).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -322,7 +326,15 @@ async fn test_e2e_ldaps() {
 #[test_log(default_log_filter = "debug")]
 async fn test_e2e_ldaps_starttls() {
 	let mut config = config().await.clone();
-	config.ldap.tls.as_mut().expect("tls must be configured").danger_use_start_tls = true;
+	if let Some(ref mut ldap_config) = config.source_ldap {
+		if let Some(ref mut tls_config) = ldap_config.tls {
+			tls_config.danger_use_start_tls = true;
+		} else {
+			panic!("tls must be configured");
+		}
+	} else {
+		panic!("ldap must be configured for this test");
+	}
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -336,7 +348,7 @@ async fn test_e2e_ldaps_starttls() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+	perform_sync(&config).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -354,7 +366,7 @@ async fn test_e2e_no_phone() {
 	ldap.create_user("Bob", "Tables", "Bobby", "no_phone@famedly.de", None, "no_phone", false)
 		.await;
 
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -381,10 +393,14 @@ async fn test_e2e_binary_attr() {
 
 	// OpenLDAP checks if types match, so we need to use an attribute
 	// that can actually be binary.
-	config.ldap.attributes.preferred_username = AttributeMapping::OptionalBinary {
-		name: "userSMIMECertificate".to_owned(),
-		is_binary: true,
-	};
+	if let Some(ref mut ldap_config) = config.source_ldap {
+		ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
+			name: "userSMIMECertificate".to_owned(),
+			is_binary: true,
+		};
+	} else {
+		panic!("ldap must be configured for this test");
+	}
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -407,7 +423,7 @@ async fn test_e2e_binary_attr() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config.clone()).await.expect("syncing failed");
+	perform_sync(&config).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -420,7 +436,7 @@ async fn test_e2e_binary_attr() {
 	if let Some(user) = user {
 		let preferred_username = zitadel
 			.get_user_metadata(
-				Some(config.famedly.organization_id.clone()),
+				Some(config.zitadel_config.organization_id.clone()),
 				&user.id,
 				"preferred_username",
 			)
@@ -442,10 +458,14 @@ async fn test_e2e_binary_attr_valid_utf8() {
 
 	// OpenLDAP checks if types match, so we need to use an attribute
 	// that can actually be binary.
-	config.ldap.attributes.preferred_username = AttributeMapping::OptionalBinary {
-		name: "userSMIMECertificate".to_owned(),
-		is_binary: true,
-	};
+	if let Some(ref mut ldap_config) = config.source_ldap {
+		ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
+			name: "userSMIMECertificate".to_owned(),
+			is_binary: true,
+		};
+	} else {
+		panic!("ldap must be configured for this test");
+	}
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -464,7 +484,7 @@ async fn test_e2e_binary_attr_valid_utf8() {
 	)
 	.await;
 
-	sync_ldap_users_to_zitadel(config.clone()).await.expect("syncing failed");
+	perform_sync(&config).await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel
@@ -477,7 +497,7 @@ async fn test_e2e_binary_attr_valid_utf8() {
 	if let Some(user) = user {
 		let preferred_username = zitadel
 			.get_user_metadata(
-				Some(config.famedly.organization_id.clone()),
+				Some(config.zitadel_config.organization_id.clone()),
 				&user.id,
 				"preferred_username",
 			)
@@ -513,17 +533,17 @@ async fn test_e2e_dry_run() {
 	let zitadel = open_zitadel_connection().await;
 
 	// Assert the user does not sync, because this is a dry run
-	sync_ldap_users_to_zitadel(dry_run_config.clone()).await.expect("syncing failed");
+	perform_sync(&dry_run_config).await.expect("syncing failed");
 	assert!(zitadel.get_user_by_login_name("dry_run@famedly.de").await.is_err_and(
 		|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound),
 	));
 
 	// Actually sync the user so we can test other changes
-	sync_ldap_users_to_zitadel(config().await.clone()).await.expect("syncing failed");
+	perform_sync(config().await).await.expect("syncing failed");
 
 	// Assert that a change in phone number does not sync
 	ldap.change_user("dry_run", vec![("telephoneNumber", HashSet::from(["+12015550124"]))]).await;
-	sync_ldap_users_to_zitadel(dry_run_config.clone()).await.expect("syncing failed");
+	perform_sync(&dry_run_config).await.expect("syncing failed");
 	let user = zitadel
 		.get_user_by_login_name("dry_run@famedly.de")
 		.await
@@ -536,7 +556,7 @@ async fn test_e2e_dry_run() {
 
 	// Assert that disabling a user does not sync
 	ldap.change_user("dry_run", vec![("shadowFlag", HashSet::from(["514"]))]).await;
-	sync_ldap_users_to_zitadel(dry_run_config.clone()).await.expect("syncing failed");
+	perform_sync(&dry_run_config).await.expect("syncing failed");
 	assert!(zitadel
 		.get_user_by_login_name("dry_run@famedly.de")
 		.await
@@ -544,7 +564,7 @@ async fn test_e2e_dry_run() {
 
 	// Assert that a user deletion does not sync
 	ldap.delete_user("dry_run").await;
-	sync_ldap_users_to_zitadel(dry_run_config).await.expect("syncing failed");
+	perform_sync(&dry_run_config).await.expect("syncing failed");
 	assert!(zitadel
 		.get_user_by_login_name("dry_run@famedly.de")
 		.await
@@ -603,7 +623,7 @@ async fn test_e2e_sync_deactivated_only() {
 
 	let mut config = config().await.clone();
 
-	sync_ldap_users_to_zitadel(config.clone()).await.expect("syncing failed");
+	perform_sync(&config).await.expect("syncing failed");
 	let zitadel = open_zitadel_connection().await;
 	let user = zitadel.get_user_by_login_name("disable_disable_only@famedly.de").await;
 	assert!(user.is_ok_and(|u| u.is_some()));
@@ -635,7 +655,7 @@ async fn test_e2e_sync_deactivated_only() {
 	.await;
 	ldap.delete_user("deleted_disable_only").await;
 	ldap.change_user("reenabled_disable_only", vec![("shadowFlag", HashSet::from(["512"]))]).await;
-	sync_ldap_users_to_zitadel(config).await.expect("syncing failed");
+	perform_sync(&config).await.expect("syncing failed");
 
 	let user = zitadel.get_user_by_login_name("disable_disable_only@famedly.de").await;
 	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));
@@ -667,23 +687,28 @@ struct Ldap {
 
 impl Ldap {
 	async fn new() -> Self {
-		let config = config().await;
+		let config = config().await.clone();
 		let mut settings = LdapConnSettings::new();
 
-		settings = settings.set_conn_timeout(Duration::from_secs(config.ldap.timeout));
-		settings = settings.set_starttls(false);
+		if let Some(ref ldap_config) = config.source_ldap {
+			settings = settings.set_conn_timeout(Duration::from_secs(ldap_config.timeout));
+			settings = settings.set_starttls(false);
 
-		let (conn, mut ldap) = LdapConnAsync::from_url_with_settings(settings, &config.ldap.url)
-			.await
-			.expect("could not connect to ldap");
+			let (conn, mut ldap) =
+				LdapConnAsync::from_url_with_settings(settings, &ldap_config.url)
+					.await
+					.expect("could not connect to ldap");
 
-		ldap3::drive!(conn);
+			ldap3::drive!(conn);
 
-		ldap.simple_bind(&config.ldap.bind_dn, &config.ldap.bind_password)
-			.await
-			.expect("could not authenticate to ldap");
+			ldap.simple_bind(&ldap_config.bind_dn, &ldap_config.bind_password)
+				.await
+				.expect("could not authenticate to ldap");
 
-		Self { client: ldap }
+			Self { client: ldap }
+		} else {
+			panic!("ldap must be configured for this test");
+		}
 	}
 
 	/// Create a test user
@@ -715,10 +740,16 @@ impl Ldap {
 
 		if let Some(phone) = telephone_number {
 			attrs.push(("telephoneNumber", HashSet::from([phone])));
+		}
+
+		let base_dn = if let Some(ref ldap_config) = config().await.source_ldap {
+			ldap_config.base_dn.as_str()
+		} else {
+			panic!("ldap must be configured for this test");
 		};
 
 		self.client
-			.add(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()), attrs)
+			.add(&format!("uid={},{}", uid, base_dn), attrs)
 			.await
 			.expect("failed to create debug user")
 			.success()
@@ -737,8 +768,14 @@ impl Ldap {
 			.map(|(attribute, changes)| Mod::Replace(attribute, changes))
 			.collect();
 
+		let base_dn = if let Some(ref source_ldap) = config().await.source_ldap {
+			source_ldap.base_dn.as_str()
+		} else {
+			panic!("ldap must be configured for this test");
+		};
+
 		self.client
-			.modify(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()), mods)
+			.modify(&format!("uid={},{}", uid, base_dn), mods)
 			.await
 			.expect("failed to modify user")
 			.success()
@@ -746,8 +783,14 @@ impl Ldap {
 	}
 
 	async fn delete_user(&mut self, uid: &str) {
+		let base_dn = if let Some(ref source_ldap) = config().await.source_ldap {
+			source_ldap.base_dn.as_str()
+		} else {
+			panic!("ldap must be configured for this test");
+		};
+
 		self.client
-			.delete(&format!("uid={},{}", uid, config().await.ldap.base_dn.as_str()))
+			.delete(&format!("uid={},{}", uid, base_dn))
 			.await
 			.expect("failed to delete user")
 			.success()
@@ -757,8 +800,10 @@ impl Ldap {
 
 /// Open a connection to the configured Zitadel backend
 async fn open_zitadel_connection() -> Zitadel {
-	let famedly = config().await.famedly.clone();
-	Zitadel::new(famedly.url, famedly.key_file).await.expect("failed to set up Zitadel client")
+	let zitadel_config = config().await.zitadel_config.clone();
+	Zitadel::new(zitadel_config.url, zitadel_config.key_file)
+		.await
+		.expect("failed to set up Zitadel client")
 }
 
 /// Get the module's test environment config

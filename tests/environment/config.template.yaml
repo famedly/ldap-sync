@@ -1,4 +1,10 @@
-ldap:
+source_list:
+  url: https://list.example.invalid
+  client_id: 123456
+  client_secret: abcdef
+  scope: "read-maillist"
+
+source_ldap:
   url: ldap://localhost:1389
   base_dn: ou=testorg,dc=example,dc=org
   bind_dn: cn=admin,dc=example,dc=org
@@ -25,7 +31,7 @@ ldap:
     danger_disable_tls_verify: false
     danger_use_start_tls: false
 
-famedly:
+zitadel_config:
   url: http://localhost:8080
   key_file: tests/environment/zitadel/service-user.json
   organization_id: @ORGANIZATION_ID@

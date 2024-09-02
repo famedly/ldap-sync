@@ -1,101 +1,61 @@
-//! Simple LDAP -> Famedly Zitadel sync tool to match users between
-//! clients and our infrastructure.
-use std::path::Path;
+//! Sync tool between other sources and our infrastructure based on Zitadel.
 
-use anyhow::{bail, Context, Result};
-use ldap_poller::{ldap::EntryStatus, ldap3::SearchEntry, Cache, Ldap};
-use tokio::sync::mpsc::Receiver;
-use tokio_stream::{wrappers::ReceiverStream, StreamExt};
+use anyhow::Result;
 
 mod config;
+mod source_ldap;
+mod source_list;
 mod user;
 mod zitadel;
 
 pub use config::{AttributeMapping, Config, FeatureFlag};
+use source_ldap::SourceLdap;
+use source_list::SourceList;
+use user::User;
 use zitadel::Zitadel;
 
-/// Run the sync
-pub async fn sync_ldap_users_to_zitadel(config: Config) -> Result<()> {
-	if !config.feature_flags.contains(&FeatureFlag::SsoLogin) {
+/// Trait to define sources that can be used for syncing
+trait Source {
+	/// Create a new sync source
+	fn new(config: &Config) -> Result<Self>
+	where
+		Self: Sized;
+
+	/// Get lists of all changes
+	async fn get_all_changes(&self) -> Result<(Vec<User>, Vec<(User, User)>, Vec<String>)>;
+
+	/// Get list of user emails that have been removed
+	async fn get_removed_user_emails(&self) -> Result<Vec<String>>;
+}
+
+/// Perform a sync operation
+pub async fn perform_sync(config: &Config) -> Result<()> {
+	if !config.feature_flags.require_sso_login() {
 		anyhow::bail!("Non-SSO configuration is currently not supported");
 	}
 
-	let cache = read_cache(&config.cache_path).await?;
-	let zitadel = Zitadel::new(&config).await?;
-	let (mut ldap_client, ldap_receiver) = Ldap::new(config.clone().ldap.into(), cache);
+	// Setup Zitadel client
+	let zitadel = Zitadel::new(config).await?;
 
-	let deactivate_only = config.deactivate_only();
+	// Perform LDAP sync
+	if config.source_ldap.is_some() {
+		let ldap_sync = SourceLdap::new(config)?;
+		let (added, changed, removed) = ldap_sync.get_all_changes().await?;
 
-	let sync_handle: tokio::task::JoinHandle<Result<_>> = tokio::spawn(async move {
-		ldap_client.sync_once(None).await.context("failed to sync/fetch data from LDAP")?;
-
-		if config.dry_run() {
-			tracing::warn!("Not writing ldap cache during a dry run");
-		} else {
-			let cache = ldap_client.persist_cache().await;
-			tokio::fs::write(
-				&config.cache_path,
-				bincode::serialize(&cache).context("failed to serialize cache")?,
-			)
-			.await
-			.context("failed to write cache")?;
+		if !config.feature_flags.deactivate_only() {
+			zitadel.import_new_users(added).await?;
+			zitadel.delete_users_by_id(removed).await?;
 		}
 
-		tracing::info!("Finished syncing LDAP data");
+		zitadel.update_users(changed).await?;
+	}
 
-		Ok(())
-	});
-
-	let (added, changed, removed) = get_user_changes(ldap_receiver).await;
-
-	sync_handle.await??;
-
-	zitadel.update_users(changed).await?;
-
-	if !deactivate_only {
-		zitadel.import_new_users(added).await?;
-		zitadel.delete_users(removed).await?;
+	// Perform Disable List sync
+	if config.source_list.is_some() {
+		let endpoint_sync = SourceList::new(config)?;
+		let removed = endpoint_sync.get_removed_user_emails().await?;
+		zitadel.delete_users_by_email(removed).await?;
 	}
 
 	Ok(())
-}
-
-/// Get user changes from an ldap receiver
-async fn get_user_changes(
-	ldap_receiver: Receiver<EntryStatus>,
-) -> (Vec<SearchEntry>, Vec<(SearchEntry, SearchEntry)>, Vec<Vec<u8>>) {
-	ReceiverStream::new(ldap_receiver)
-		.fold((vec![], vec![], vec![]), |(mut added, mut changed, mut removed), entry_status| {
-			match entry_status {
-				EntryStatus::New(entry) => {
-					tracing::debug!("New entry: {:?}", entry);
-					added.push(entry);
-				}
-				EntryStatus::Changed { old, new } => {
-					tracing::debug!("Changes found for {:?} -> {:?}", old, new);
-					changed.push((old, new));
-				}
-				EntryStatus::Removed(entry) => {
-					tracing::debug!("Deleted user {}", String::from_utf8_lossy(&entry));
-					removed.push(entry);
-				}
-			};
-			(added, changed, removed)
-		})
-		.await
-}
-
-/// Read the ldap sync cache
-async fn read_cache(path: &Path) -> Result<Option<Cache>> {
-	Ok(match tokio::fs::read(path).await {
-		Ok(data) => Some(bincode::deserialize(&data).context("cache deserialization failed")?),
-		Err(err) => {
-			if err.kind() == std::io::ErrorKind::NotFound {
-				tracing::info!("LDAP sync cache missing");
-				None
-			} else {
-				bail!(err)
-			}
-		}
-	})
 }

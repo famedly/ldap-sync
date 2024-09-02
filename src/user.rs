@@ -1,12 +1,8 @@
 //! User data helpers
 use std::fmt::Display;
 
-use anyhow::{anyhow, bail, Result};
 use base64::prelude::{Engine, BASE64_STANDARD};
-use ldap_poller::{ldap3::SearchEntry, SearchEntryExt};
 use zitadel_rust_client::{Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile};
-
-use crate::config::{AttributeMapping, Config, FeatureFlag};
 
 /// Crate-internal representation of a Zitadel/LDAP user
 #[derive(Clone, Debug)]
@@ -43,66 +39,6 @@ impl User {
 	/// Return the name to be used in logs to identify this user
 	pub(crate) fn log_name(&self) -> String {
 		format!("email={}", &self.email)
-	}
-
-	/// Construct a user from an LDAP SearchEntry
-	pub(crate) fn try_from_search_entry(entry: SearchEntry, config: &Config) -> Result<Self> {
-		/// Read an attribute from the entry
-		fn read_entry(entry: &SearchEntry, attribute: &AttributeMapping) -> Result<StringOrBytes> {
-			match attribute {
-				AttributeMapping::OptionalBinary { name, is_binary: false }
-				| AttributeMapping::NoBinaryOption(name) => {
-					if let Some(attr) = entry.attr_first(name) {
-						return Ok(StringOrBytes::String(attr.to_owned()));
-					};
-				}
-				AttributeMapping::OptionalBinary { name, is_binary: true } => {
-					if let Some(binary_attr) = entry.bin_attr_first(name) {
-						return Ok(StringOrBytes::Bytes(binary_attr.to_vec()));
-					};
-
-					// If attributes encode as valid UTF-8, they will
-					// not be in the bin_attr list
-					if let Some(attr) = entry.attr_first(name) {
-						return Ok(StringOrBytes::Bytes(attr.as_bytes().to_vec()));
-					};
-				}
-			}
-
-			bail!("missing `{}` values for `{}`", attribute, entry.dn)
-		}
-
-		let status_as_int = match read_entry(&entry, &config.ldap.attributes.status)? {
-			StringOrBytes::String(status) => status.parse::<i32>()?,
-			StringOrBytes::Bytes(status) => i32::from_be_bytes(
-				status.try_into().map_err(|_| anyhow!("failed to convert to i32 flag"))?,
-			),
-		};
-		let enabled =
-			!config.ldap.attributes.disable_bitmasks.iter().any(|flag| status_as_int & flag != 0);
-
-		let first_name = read_entry(&entry, &config.ldap.attributes.first_name)?;
-		let last_name = read_entry(&entry, &config.ldap.attributes.last_name)?;
-		let preferred_username = read_entry(&entry, &config.ldap.attributes.preferred_username)?;
-		let email = read_entry(&entry, &config.ldap.attributes.email)?;
-		let user_id = read_entry(&entry, &config.ldap.attributes.user_id)?;
-		let phone = read_entry(&entry, &config.ldap.attributes.phone).ok();
-
-		Ok(Self {
-			first_name,
-			last_name,
-			preferred_username,
-			email,
-			ldap_id: user_id,
-			phone,
-			enabled,
-			needs_email_verification: config.feature_flags.contains(&FeatureFlag::VerifyEmail),
-			needs_phone_verification: config.feature_flags.contains(&FeatureFlag::VerifyPhone),
-			idp_id: config
-				.feature_flags
-				.contains(&FeatureFlag::SsoLogin)
-				.then(|| config.famedly.idp_id.clone()),
-		})
 	}
 
 	/// Get idp link as required by Zitadel
@@ -155,6 +91,12 @@ impl Display for User {
 	}
 }
 
+// TODO:
+/***
+ * This is probably only necessary for the LDAP sync source if Zitadel has
+ * only one of them (String OR Byte), get rid of this, move what's necessary
+ * to the LDAP sync source
+ */
 /// A structure that can either be a string or bytes
 #[derive(Clone, Debug)]
 pub(crate) enum StringOrBytes {

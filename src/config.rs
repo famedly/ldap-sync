@@ -1,6 +1,7 @@
 //! All sync client configuration structs and logic
 use std::{
 	fmt::Display,
+	ops::{Deref, DerefMut},
 	path::{Path, PathBuf},
 };
 
@@ -14,6 +15,26 @@ const ENV_VAR_CONFIG_PREFIX: &str = "FAMEDLY_LDAP_SYNC";
 /// Separator for setting a list using env vars
 const ENV_VAR_LIST_SEP: &str = " ";
 
+/// Configuration for the sync client
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct Config {
+	/// Configuration related to Zitadel provided by Famedly
+	// TODO: Renamed from famedly to zitadel_config (needs update to the env vars)
+	pub zitadel_config: ZitadelConfig,
+	/// Optional LDAP configuration
+	// TODO: Renamed from ldap to source_ldap (needs update to the env vars)
+	pub source_ldap: Option<SourceLdapConfig>,
+	/// Optional Disable List configuration
+	pub source_list: Option<SourceListConfig>,
+	/// Optional sync tool log level
+	pub log_level: Option<String>,
+	/// Opt-in features
+	#[serde(default)]
+	pub feature_flags: FeatureFlags,
+	/// General cache path
+	pub cache_path: PathBuf,
+}
+
 impl Config {
 	/// Create new config from file and env var
 	pub fn new(path: &Path) -> Result<Self> {
@@ -23,7 +44,7 @@ impl Config {
 				config::Environment::with_prefix(ENV_VAR_CONFIG_PREFIX)
 					.separator("__")
 					.list_separator(ENV_VAR_LIST_SEP)
-					.with_list_parse_key("ldap.attributes.disable_bitmasks")
+					.with_list_parse_key("source_ldap.attributes.disable_bitmasks")
 					.with_list_parse_key("feature_flags")
 					.try_parsing(true),
 			);
@@ -31,77 +52,49 @@ impl Config {
 		let config_builder = config_builder.build()?;
 
 		let config: Config = config_builder.try_deserialize()?;
+
 		config.validate()
 	}
 
 	/// Validate the config and return a valid configuration
 	fn validate(mut self) -> Result<Self> {
-		self.famedly.url = validate_famedly_url(self.famedly.url)?;
+		self.zitadel_config.url = validate_zitadel_url(self.zitadel_config.url)?;
 
 		Ok(self)
 	}
-
-	/// Whether phone verification is enabled
-	#[must_use]
-	pub fn require_phone_verification(&self) -> bool {
-		self.feature_flags.contains(&FeatureFlag::VerifyPhone)
-	}
-
-	/// Whether email verification is enabled
-	#[must_use]
-	pub fn require_email_verification(&self) -> bool {
-		self.feature_flags.contains(&FeatureFlag::VerifyEmail)
-	}
-
-	/// Whether SSO login is enabled
-	#[must_use]
-	pub fn require_sso_login(&self) -> bool {
-		self.feature_flags.contains(&FeatureFlag::SsoLogin)
-	}
-
-	/// Whether dry run is enabled
-	#[must_use]
-	pub fn dry_run(&self) -> bool {
-		self.feature_flags.contains(&FeatureFlag::DryRun)
-	}
-
-	/// Whether deactivate only is enabled
-	#[must_use]
-	pub fn deactivate_only(&self) -> bool {
-		self.feature_flags.contains(&FeatureFlag::DeactivateOnly)
-	}
 }
 
-/// Validate the famedly URL
-fn validate_famedly_url(url: Url) -> Result<Url> {
-	// If a URL contains a port, the domain name may appear as a
-	// scheme and pass through URL parsing despite lacking a scheme
-	if url.scheme() != "https" && url.scheme() != "http" {
-		bail!("famedly URL scheme must be `http` or `https`, e.g. `https://{}`", url);
-	}
-
-	Ok(url)
-}
-
-/// Configuration for the sync client
+/// Configuration related to Famedly Zitadel
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct Config {
-	/// LDAP-specific configuration
-	pub ldap: LdapConfig,
-	/// Configuration related to Famedly Zitadel
-	pub famedly: FamedlyConfig,
-	/// Opt-in features
-	#[serde(default)]
-	pub feature_flags: Set<FeatureFlag>,
-	/// Where to cache the last known LDAP state
-	pub cache_path: PathBuf,
-	/// The sync tool log level
-	pub log_level: Option<String>,
+pub struct ZitadelConfig {
+	/// The URL for Famedly Zitadel authentication
+	pub url: Url,
+	/// File containing a private key for authentication to Famedly Zitadel
+	pub key_file: PathBuf,
+	/// Organization ID provided by Famedly Zitadel
+	pub organization_id: String,
+	/// Project ID provided by Famedly Zitadel
+	pub project_id: String,
+	/// IDP ID provided by Famedly Zitadel
+	pub idp_id: String,
+}
+
+/// Configuration to get a list of users from an endpoint
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SourceListConfig {
+	/// The URL of the endpoint
+	pub url: Url,
+	/// The API client ID for the endpoint
+	pub client_id: String,
+	/// The API client secret for the endpoint
+	pub client_secret: String,
+	/// The scope for the endpoint
+	pub scope: String,
 }
 
 /// LDAP-specific configuration
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct LdapConfig {
+pub struct SourceLdapConfig {
 	/// The URL of the LDAP/AD server
 	pub url: Url,
 	/// The base DN for searching users
@@ -121,7 +114,6 @@ pub struct LdapConfig {
 	/// Whether to update deleted entries
 	pub check_for_deleted_entries: bool,
 	/// Whether to ask LDAP for specific attributes or just specify *.
-	///
 	/// Various implementations either do or don't send data in both
 	/// cases, so this needs to be tested against the actual server.
 	pub use_attribute_filter: bool,
@@ -129,8 +121,8 @@ pub struct LdapConfig {
 	pub tls: Option<LdapTlsConfig>,
 }
 
-impl From<LdapConfig> for ldap_poller::Config {
-	fn from(cfg: LdapConfig) -> ldap_poller::Config {
+impl From<SourceLdapConfig> for ldap_poller::Config {
+	fn from(cfg: SourceLdapConfig) -> ldap_poller::Config {
 		let starttls = cfg.tls.as_ref().is_some_and(|tls| tls.danger_use_start_tls);
 		let no_tls_verify = cfg.tls.as_ref().is_some_and(|tls| tls.danger_disable_tls_verify);
 		let root_certificates_path =
@@ -275,24 +267,7 @@ pub struct LdapTlsConfig {
 	pub danger_use_start_tls: bool,
 }
 
-/// Configuration related to Famedly Zitadel
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct FamedlyConfig {
-	/// The URL for Famedly authentication
-	pub url: Url,
-	/// File containing a private key for authentication to Famedly
-	pub key_file: PathBuf,
-	/// Organization ID provided by Famedly
-	pub organization_id: String,
-	/// Project ID provided by Famedly
-	pub project_id: String,
-	/// IDP ID provided by Famedly
-	pub idp_id: String,
-}
-
-pub type Set<T> = Vec<T>;
-
-/// Opt-in features
+/// Opt-in features for LDAP
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureFlag {
@@ -309,18 +284,86 @@ pub enum FeatureFlag {
 	DeactivateOnly,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+pub struct FeatureFlags(Vec<FeatureFlag>);
+
+impl Deref for FeatureFlags {
+	type Target = Vec<FeatureFlag>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0
+	}
+}
+
+impl DerefMut for FeatureFlags {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.0
+	}
+}
+
+impl FeatureFlags {
+	/// Whether SSO login is enabled
+	#[must_use]
+	pub fn require_sso_login(&self) -> bool {
+		self.contains(&FeatureFlag::SsoLogin)
+	}
+
+	/// Whether phone verification is enabled
+	#[must_use]
+	pub fn require_phone_verification(&self) -> bool {
+		self.contains(&FeatureFlag::VerifyPhone)
+	}
+
+	/// Whether email verification is enabled
+	#[must_use]
+	pub fn require_email_verification(&self) -> bool {
+		self.contains(&FeatureFlag::VerifyEmail)
+	}
+
+	/// Whether dry run is enabled
+	#[must_use]
+	pub fn dry_run(&self) -> bool {
+		self.contains(&FeatureFlag::DryRun)
+	}
+
+	/// Whether LDAP deactivate only is enabled
+	#[must_use]
+	pub fn deactivate_only(&self) -> bool {
+		self.contains(&FeatureFlag::DeactivateOnly)
+	}
+}
+
+/// Validate the Zitadel URL provided by Famedly
+fn validate_zitadel_url(url: Url) -> Result<Url> {
+	// If a URL contains a port, the domain name may appear as a
+	// scheme and pass through URL parsing despite lacking a scheme
+	if url.scheme() != "https" && url.scheme() != "http" {
+		bail!("zitadel URL scheme must be `http` or `https`, e.g. `https://{}`", url);
+	}
+
+	Ok(url)
+}
+
+// Run these tests with
+// RUST_TEST_THREADS=1 cargo test --lib
 #[cfg(test)]
 mod tests {
 	#![allow(clippy::expect_used, clippy::unwrap_used)]
-	use std::{env, fs::File, io::Write};
+	use std::{collections::BTreeMap, env, fs::File, io::Write};
 
 	use indoc::indoc;
 	use tempfile::TempDir;
 
 	use super::*;
 
-	const EXAMPLE_CONFIG: &str = indoc! {r#"
-        ldap:
+	const EXAMPLE_CONFIG_WITH_LDAP: &str = indoc! {r#"
+        source_list:
+          url: https://list.example.invalid
+          client_id: 123456
+          client_secret: abcdef
+          scope: "read-maillist"
+
+        source_ldap:
           url: ldap://localhost:1389
           base_dn: ou=testorg,dc=example,dc=org
           bind_dn: cn=admin,dc=example,dc=org
@@ -347,7 +390,7 @@ mod tests {
             danger_disable_tls_verify: false
             danger_use_start_tls: false
 
-        famedly:
+        zitadel_config:
           url: http://localhost:8080
           key_file: tests/environment/zitadel/service-user.json
           organization_id: 1
@@ -358,13 +401,35 @@ mod tests {
         cache_path: ./test
 	"#};
 
-	fn example_config() -> Config {
-		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
+	fn full_config_example() -> Config {
+		serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config")
+	}
+
+	fn config_without_source_ldap() -> Config {
+		let mut config: BTreeMap<String, serde_yaml::Value> =
+			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
+		config.remove("source_ldap");
+		let slim_config = serde_yaml::to_string(&config).expect("failed to serialize config");
+		serde_yaml::from_str(&slim_config).expect("invalid config")
+	}
+
+	fn config_without_source_list() -> Config {
+		let mut config: BTreeMap<String, serde_yaml::Value> =
+			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
+		config.remove("source_list");
+		let slim_config = serde_yaml::to_string(&config).expect("failed to serialize config");
+		serde_yaml::from_str(&slim_config).expect("invalid config")
+	}
+
+	fn example_ldap_config() -> SourceLdapConfig {
+		let config: Config =
+			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
+		config.source_ldap.expect("Expected LDAP config")
 	}
 
 	fn example_env_vars() -> Vec<(String, String)> {
 		let config: serde_yaml::Value =
-			serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config");
+			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
 		let mut prefix_stack = Vec::new();
 		get_env_vars_from_map(
 			config.as_mapping().expect("Expected a map but it isn't"),
@@ -419,48 +484,48 @@ mod tests {
 		let file_path = dir.join("config.yaml");
 		let mut config_file = File::create(&file_path).expect("failed to create config file");
 		config_file
-			.write_all(EXAMPLE_CONFIG.as_bytes())
+			.write_all(EXAMPLE_CONFIG_WITH_LDAP.as_bytes())
 			.expect("Failed to write config file content");
 		file_path
 	}
 
 	#[test]
-	fn test_famedly_url_validate_valid() {
+	fn test_zitadel_url_validate_valid() {
 		let url = Url::parse("https://famedly.de").expect("invalid url");
-		let validated = validate_famedly_url(url).expect("url failed to validate");
+		let validated = validate_zitadel_url(url).expect("url failed to validate");
 		assert_eq!(validated.to_string(), "https://famedly.de/");
 	}
 
 	#[test]
-	fn test_famedly_url_validate_trailing_slash_path() {
+	fn test_zitadel_url_validate_trailing_slash_path() {
 		let url = Url::parse("https://famedly.de/test/").expect("invalid url");
-		let validated = validate_famedly_url(url).expect("url failed to validate");
+		let validated = validate_zitadel_url(url).expect("url failed to validate");
 		assert_eq!(validated.to_string(), "https://famedly.de/test/");
 	}
 
 	#[test]
-	fn test_famedly_url_validate_scheme() {
+	fn test_zitadel_url_validate_scheme() {
 		let url = Url::parse("famedly.de:443").expect("invalid url");
-		assert!(validate_famedly_url(url).is_err());
+		assert!(validate_zitadel_url(url).is_err());
 	}
 
 	#[test]
 	fn test_attribute_filter_use() {
-		let config = example_config();
+		let ldap_config = example_ldap_config();
 
 		assert_eq!(
-			Into::<ldap_poller::Config>::into(config.ldap).attributes.get_attr_filter(),
+			Into::<ldap_poller::Config>::into(ldap_config).attributes.get_attr_filter(),
 			vec!["uid", "shadowFlag", "cn", "sn", "displayName", "mail", "telephoneNumber"]
 		);
 	}
 
 	#[test]
 	fn test_no_attribute_filters() {
-		let mut config = example_config();
-		config.ldap.use_attribute_filter = false;
+		let mut ldap_config = example_ldap_config();
+		ldap_config.use_attribute_filter = false;
 
 		assert_eq!(
-			Into::<ldap_poller::Config>::into(config.ldap).attributes.get_attr_filter(),
+			Into::<ldap_poller::Config>::into(ldap_config).attributes.get_attr_filter(),
 			vec!["*"]
 		);
 	}
@@ -478,7 +543,7 @@ mod tests {
 		let file_path = create_config_file(tempdir.path());
 		let config = Config::new(file_path.as_path()).expect("Failed to create config object");
 
-		assert_eq!(example_config(), config);
+		assert_eq!(full_config_example(), config);
 	}
 
 	#[test]
@@ -486,16 +551,19 @@ mod tests {
 		let tempdir = TempDir::new().expect("failed to initialize cache dir");
 		let file_path = create_config_file(tempdir.path());
 
-		let env_var_name = format!("{ENV_VAR_CONFIG_PREFIX}__LDAP__TIMEOUT");
+		let env_var_name = format!("{ENV_VAR_CONFIG_PREFIX}__SOURCE_LDAP__TIMEOUT");
 		env::set_var(&env_var_name, "1");
 
 		let loaded_config =
 			Config::new(file_path.as_path()).expect("Failed to create config object");
-		let mut sample_config = example_config();
-
-		sample_config.ldap.timeout = 1;
-
 		env::remove_var(env_var_name);
+
+		let mut sample_config = full_config_example();
+		if let Some(ref mut ldap_config) = sample_config.source_ldap {
+			ldap_config.timeout = 1;
+		} else {
+			panic!("LDAP configuration is missing");
+		}
 
 		assert_eq!(sample_config, loaded_config);
 	}
@@ -508,13 +576,15 @@ mod tests {
 				env::set_var(key, value);
 			}
 		}
-		let config = Config::new(Path::new("no_file.yaml"));
+
+		let config =
+			Config::new(Path::new("no_file.yaml")).expect("Failed to create config object");
 
 		for (key, _) in &env_vars {
 			env::remove_var(key);
 		}
 
-		assert_eq!(example_config(), config.expect("Failed to create config object"));
+		assert_eq!(full_config_example(), config);
 	}
 
 	#[test]
@@ -527,7 +597,7 @@ mod tests {
 
 		let loaded_config =
 			Config::new(file_path.as_path()).expect("Failed to create config object");
-		let mut sample_config = example_config();
+		let mut sample_config = full_config_example();
 
 		sample_config.feature_flags.push(FeatureFlag::SsoLogin);
 		sample_config.feature_flags.push(FeatureFlag::VerifyEmail);
