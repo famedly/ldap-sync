@@ -3569,8 +3569,9 @@ dependencies = [
 [[package]]
 name = "zitadel-rust-client"
 version = "0.1.0"
-source = "git+https://github.com/famedly/zitadel-rust-client#340ca3e4de47e0d0338f4a01baa25b73a578a3c4"
+source = "git+https://github.com/famedly/zitadel-rust-client#7e9c5feda2cc9647e4d5d6a4f30243c6c0cd1c1e"
 dependencies = [
+ "anyhow",
  "headers",
  "hyper",
  "hyper-proxy",
