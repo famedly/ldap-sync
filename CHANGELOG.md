@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2024-09-03
+
+### Bug Fixes
+
+- Fix zitadel-tools build by bumping go version
+- Actually make feature flags use snake_case
+- Make zitadel auth error messages richer
+- Reissue of test certificates
+
+### Continuous Integration Pipeline
+
+- Add code coverage to the test workflow
+- Publish containers to the OSS registry
+
+### Documentation
+
+- Fix mistakes in the sample config
+- Add documentation on behavior during deactivate only mode
+
+### Features
+
+- Add dry-run flag
+- Add curl to the container for debug purposes
+- Add deactivate only mode
+- Add support for configuration through env var
+
+### Miscellaneous Tasks
+
+- Lock test tool versions
+
 ## [0.2.0] - 2024-08-13
 
 ### Bug Fixes
@@ -14,6 +44,7 @@ All notable changes to this project will be documented in this file.
 - Correctly handle ldap_poller errors
 - Print error context when errors make it to the main function
 - Don't set passwordless registration for users
+- [**breaking**] Correct env-var related path issues in the docker image
 
 ### Continuous Integration Pipeline
 
