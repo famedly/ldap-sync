@@ -91,12 +91,6 @@ impl Display for User {
 	}
 }
 
-// TODO:
-/***
- * This is probably only necessary for the LDAP sync source if Zitadel has
- * only one of them (String OR Byte), get rid of this, move what's necessary
- * to the LDAP sync source
- */
 /// A structure that can either be a string or bytes
 #[derive(Clone, Debug)]
 pub(crate) enum StringOrBytes {

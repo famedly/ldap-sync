@@ -1,14 +1,17 @@
 //! All sync client configuration structs and logic
 use std::{
-	fmt::Display,
 	ops::{Deref, DerefMut},
 	path::{Path, PathBuf},
 };
 
 use anyhow::{bail, Result};
-use ldap_poller::{config::TLSConfig, AttributeConfig, CacheMethod, ConnectionConfig, Searches};
 use serde::Deserialize;
 use url::Url;
+
+use crate::{
+	sources::{ldap::SourceLdapConfig, ukt::SourceUktConfig},
+	zitadel::ZitadelConfig,
+};
 
 /// App prefix for env var configuration
 const ENV_VAR_CONFIG_PREFIX: &str = "FAMEDLY_LDAP_SYNC";
@@ -19,13 +22,13 @@ const ENV_VAR_LIST_SEP: &str = " ";
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
 	/// Configuration related to Zitadel provided by Famedly
-	// TODO: Renamed from famedly to zitadel_config (needs update to the env vars)
+	// ! Renamed from famedly to zitadel_config (needs update to the env vars)
 	pub zitadel_config: ZitadelConfig,
 	/// Optional LDAP configuration
-	// TODO: Renamed from ldap to source_ldap (needs update to the env vars)
+	// ! Renamed from ldap to source_ldap (needs update to the env vars)
 	pub source_ldap: Option<SourceLdapConfig>,
 	/// Optional Disable List configuration
-	pub source_list: Option<SourceListConfig>,
+	pub source_ukt: Option<SourceUktConfig>,
 	/// Optional sync tool log level
 	pub log_level: Option<String>,
 	/// Opt-in features
@@ -64,210 +67,7 @@ impl Config {
 	}
 }
 
-/// Configuration related to Famedly Zitadel
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct ZitadelConfig {
-	/// The URL for Famedly Zitadel authentication
-	pub url: Url,
-	/// File containing a private key for authentication to Famedly Zitadel
-	pub key_file: PathBuf,
-	/// Organization ID provided by Famedly Zitadel
-	pub organization_id: String,
-	/// Project ID provided by Famedly Zitadel
-	pub project_id: String,
-	/// IDP ID provided by Famedly Zitadel
-	pub idp_id: String,
-}
-
-/// Configuration to get a list of users from an endpoint
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct SourceListConfig {
-	/// The URL of the endpoint
-	pub url: Url,
-	/// The API client ID for the endpoint
-	pub client_id: String,
-	/// The API client secret for the endpoint
-	pub client_secret: String,
-	/// The scope for the endpoint
-	pub scope: String,
-}
-
-/// LDAP-specific configuration
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct SourceLdapConfig {
-	/// The URL of the LDAP/AD server
-	pub url: Url,
-	/// The base DN for searching users
-	pub base_dn: String,
-	/// The DN to bind for authentication
-	pub bind_dn: String,
-	/// The password for the bind DN
-	pub bind_password: String,
-	/// Filter to apply when searching for users, e.g., (objectClass=person) DO
-	/// NOT FILTER STATUS!
-	pub user_filter: String,
-	/// Timeout for LDAP operations in seconds
-	pub timeout: u64,
-	/// A mapping from the mostly free-form LDAP attributes to
-	/// attribute names as used by famedly
-	pub attributes: LdapAttributesMapping,
-	/// Whether to update deleted entries
-	pub check_for_deleted_entries: bool,
-	/// Whether to ask LDAP for specific attributes or just specify *.
-	/// Various implementations either do or don't send data in both
-	/// cases, so this needs to be tested against the actual server.
-	pub use_attribute_filter: bool,
-	/// TLS-related configuration
-	pub tls: Option<LdapTlsConfig>,
-}
-
-impl From<SourceLdapConfig> for ldap_poller::Config {
-	fn from(cfg: SourceLdapConfig) -> ldap_poller::Config {
-		let starttls = cfg.tls.as_ref().is_some_and(|tls| tls.danger_use_start_tls);
-		let no_tls_verify = cfg.tls.as_ref().is_some_and(|tls| tls.danger_disable_tls_verify);
-		let root_certificates_path =
-			cfg.tls.as_ref().and_then(|tls| tls.server_certificate.clone());
-		let client_key_path = cfg.tls.as_ref().and_then(|tls| tls.client_key.clone());
-		let client_certificate_path =
-			cfg.tls.as_ref().and_then(|tls| tls.client_certificate.clone());
-
-		let tls = TLSConfig {
-			starttls,
-			no_tls_verify,
-			root_certificates_path,
-			client_key_path,
-			client_certificate_path,
-		};
-
-		let attributes = cfg.attributes;
-		ldap_poller::Config {
-			url: cfg.url,
-			connection: ConnectionConfig {
-				timeout: cfg.timeout,
-				operation_timeout: std::time::Duration::from_secs(cfg.timeout),
-				tls,
-			},
-			search_user: cfg.bind_dn,
-			search_password: cfg.bind_password,
-			searches: Searches {
-				user_base: cfg.base_dn,
-				user_filter: cfg.user_filter,
-				page_size: None,
-			},
-			attributes: AttributeConfig {
-				pid: attributes.user_id.get_name(),
-				updated: attributes.last_modified.map(AttributeMapping::get_name),
-				additional: vec![],
-				filter_attributes: cfg.use_attribute_filter,
-				attrs_to_track: vec![
-					attributes.status.get_name(),
-					attributes.first_name.get_name(),
-					attributes.last_name.get_name(),
-					attributes.preferred_username.get_name(),
-					attributes.email.get_name(),
-					attributes.phone.get_name(),
-				],
-			},
-			cache_method: CacheMethod::ModificationTime,
-			check_for_deleted_entries: cfg.check_for_deleted_entries,
-		}
-	}
-}
-
-/// A mapping from the mostly free-form LDAP attributes to attribute
-/// names as used by famedly
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct LdapAttributesMapping {
-	/// Attribute for the user's first name
-	pub first_name: AttributeMapping,
-	/// Attribute for the user's last name
-	pub last_name: AttributeMapping,
-	/// Attribute for the user's preferred username
-	pub preferred_username: AttributeMapping,
-	/// Attribute for the user's email address
-	pub email: AttributeMapping,
-	/// Attribute for the user's phone number
-	pub phone: AttributeMapping,
-	/// Attribute for the user's unique ID
-	pub user_id: AttributeMapping,
-	/// This attribute shows the account status (It expects an i32 like
-	/// userAccountControl in AD)
-	pub status: AttributeMapping,
-	/// Marks an account as disabled (for example userAccountControl: bit flag
-	/// ACCOUNTDISABLE would be 2)
-	#[serde(default)]
-	pub disable_bitmasks: Vec<i32>,
-	/// Last modified
-	pub last_modified: Option<AttributeMapping>,
-}
-
-/// How an attribute should be defined in config - it can either be a
-/// raw string, *or* it can be a struct defining both an attribute
-/// name and whether the attribute should be treated as binary.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum AttributeMapping {
-	/// An attribute that's defined without specifying whether it is
-	/// binary or not
-	NoBinaryOption(String),
-	/// An attribute that specifies whether it is binary or not
-	OptionalBinary {
-		/// The name of the attribute
-		name: String,
-		/// Whether the attribute is binary
-		#[serde(default)]
-		is_binary: bool,
-	},
-}
-
-impl AttributeMapping {
-	/// Get the attribute name
-	#[must_use]
-	pub fn get_name(self) -> String {
-		match self {
-			Self::NoBinaryOption(name) => name,
-			Self::OptionalBinary { name, .. } => name,
-		}
-	}
-}
-
-impl Display for AttributeMapping {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "{}", self.clone().get_name())
-	}
-}
-
-/// The LDAP TLS configuration
-#[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct LdapTlsConfig {
-	/// Path to the client key; if not specified, it will be assumed
-	/// that the server is configured not to verify client
-	/// certificates.
-	pub client_key: Option<PathBuf>,
-	/// Path to the client certificate; if not specified, it will be
-	/// assumed that the server is configured not to verify client
-	/// certificates.
-	pub client_certificate: Option<PathBuf>,
-	/// Path to the server certificate; if not specified, the host's
-	/// CA will be used to verify the server.
-	pub server_certificate: Option<PathBuf>,
-	/// Whether to verify the server's certificates.
-	///
-	/// This should normally only be used in test environments, as
-	/// disabling certificate validation defies the purpose of using
-	/// TLS in the first place.
-	#[serde(default)]
-	pub danger_disable_tls_verify: bool,
-	/// Enable StartTLS, i.e., use the non-TLS ldap port, but send a
-	/// special message to upgrade the connection to TLS.
-	///
-	/// This is less secure than standard TLS, an `ldaps` URL should
-	/// be preferred.
-	#[serde(default)]
-	pub danger_use_start_tls: bool,
-}
-
-/// Opt-in features for LDAP
+/// Opt-in features
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureFlag {
@@ -302,34 +102,9 @@ impl DerefMut for FeatureFlags {
 }
 
 impl FeatureFlags {
-	/// Whether SSO login is enabled
-	#[must_use]
-	pub fn require_sso_login(&self) -> bool {
-		self.contains(&FeatureFlag::SsoLogin)
-	}
-
-	/// Whether phone verification is enabled
-	#[must_use]
-	pub fn require_phone_verification(&self) -> bool {
-		self.contains(&FeatureFlag::VerifyPhone)
-	}
-
-	/// Whether email verification is enabled
-	#[must_use]
-	pub fn require_email_verification(&self) -> bool {
-		self.contains(&FeatureFlag::VerifyEmail)
-	}
-
-	/// Whether dry run is enabled
-	#[must_use]
-	pub fn dry_run(&self) -> bool {
-		self.contains(&FeatureFlag::DryRun)
-	}
-
-	/// Whether LDAP deactivate only is enabled
-	#[must_use]
-	pub fn deactivate_only(&self) -> bool {
-		self.contains(&FeatureFlag::DeactivateOnly)
+	/// Whether a feature flag is enabled
+	pub fn is_enabled(&self, flag: FeatureFlag) -> bool {
+		self.contains(&flag)
 	}
 }
 
@@ -349,19 +124,21 @@ fn validate_zitadel_url(url: Url) -> Result<Url> {
 #[cfg(test)]
 mod tests {
 	#![allow(clippy::expect_used, clippy::unwrap_used)]
-	use std::{collections::BTreeMap, env, fs::File, io::Write};
+	use std::{env, fs::File, io::Write};
 
 	use indoc::indoc;
 	use tempfile::TempDir;
 
 	use super::*;
 
-	const EXAMPLE_CONFIG_WITH_LDAP: &str = indoc! {r#"
-        source_list:
-          url: https://list.example.invalid
-          client_id: 123456
-          client_secret: abcdef
-          scope: "read-maillist"
+	const EXAMPLE_CONFIG: &str = indoc! {r#"
+        source_ukt:
+          endpoint_url: https://list.example.invalid/usersync4chat/maillist
+          oauth2_url: https://list.example.invalid/token
+          client_id: mock_client_id
+          client_secret: mock_client_secret
+          scope: "openid read-maillist"
+          grant_type: client_credentials
 
         source_ldap:
           url: ldap://localhost:1389
@@ -402,34 +179,17 @@ mod tests {
 	"#};
 
 	fn full_config_example() -> Config {
-		serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config")
-	}
-
-	fn config_without_source_ldap() -> Config {
-		let mut config: BTreeMap<String, serde_yaml::Value> =
-			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
-		config.remove("source_ldap");
-		let slim_config = serde_yaml::to_string(&config).expect("failed to serialize config");
-		serde_yaml::from_str(&slim_config).expect("invalid config")
-	}
-
-	fn config_without_source_list() -> Config {
-		let mut config: BTreeMap<String, serde_yaml::Value> =
-			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
-		config.remove("source_list");
-		let slim_config = serde_yaml::to_string(&config).expect("failed to serialize config");
-		serde_yaml::from_str(&slim_config).expect("invalid config")
+		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
 	}
 
 	fn example_ldap_config() -> SourceLdapConfig {
-		let config: Config =
-			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
+		let config: Config = serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config");
 		config.source_ldap.expect("Expected LDAP config")
 	}
 
 	fn example_env_vars() -> Vec<(String, String)> {
 		let config: serde_yaml::Value =
-			serde_yaml::from_str(EXAMPLE_CONFIG_WITH_LDAP).expect("invalid config");
+			serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config");
 		let mut prefix_stack = Vec::new();
 		get_env_vars_from_map(
 			config.as_mapping().expect("Expected a map but it isn't"),
@@ -484,7 +244,7 @@ mod tests {
 		let file_path = dir.join("config.yaml");
 		let mut config_file = File::create(&file_path).expect("failed to create config file");
 		config_file
-			.write_all(EXAMPLE_CONFIG_WITH_LDAP.as_bytes())
+			.write_all(EXAMPLE_CONFIG.as_bytes())
 			.expect("Failed to write config file content");
 		file_path
 	}
@@ -559,11 +319,11 @@ mod tests {
 		env::remove_var(env_var_name);
 
 		let mut sample_config = full_config_example();
-		if let Some(ref mut ldap_config) = sample_config.source_ldap {
-			ldap_config.timeout = 1;
-		} else {
-			panic!("LDAP configuration is missing");
-		}
+		sample_config
+			.source_ldap
+			.as_mut()
+			.map(|ldap_config| ldap_config.timeout = 1)
+			.expect("LDAP configuration is missing");
 
 		assert_eq!(sample_config, loaded_config);
 	}

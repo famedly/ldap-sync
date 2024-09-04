@@ -1,5 +1,9 @@
 //! Helper functions for submitting data to Zitadel
+use std::path::PathBuf;
+
 use anyhow::{bail, Context, Result};
+use serde::Deserialize;
+use url::Url;
 use uuid::{uuid, Uuid};
 use zitadel_rust_client::{
 	error::{Error as ZitadelError, TonicErrorCode},
@@ -7,8 +11,10 @@ use zitadel_rust_client::{
 };
 
 use crate::{
-	config::{Config, FeatureFlags, ZitadelConfig},
+	config::{Config, FeatureFlags},
+	sources::ldap::ChangedUser,
 	user::{StringOrBytes, User},
+	FeatureFlag,
 };
 
 /// The Famedly UUID namespace to use to generate v5 UUIDs.
@@ -84,22 +90,23 @@ impl Zitadel {
 	}
 
 	/// Update a list of old/new user maps
-	pub(crate) async fn update_users(&self, users: Vec<(User, User)>) -> Result<()> {
+	pub(crate) async fn update_users(&self, users: Vec<ChangedUser>) -> Result<()> {
 		let disabled: Vec<User> = users
 			.iter()
-			.filter(|&(old, new)| old.enabled && !new.enabled)
-			.map(|(_, new)| new.clone())
+			.filter(|user| user.old.enabled && !user.new.enabled)
+			.map(|user| user.new.clone())
 			.collect();
 
 		let enabled: Vec<User> = users
 			.iter()
-			.filter(|(old, new)| !old.enabled && new.enabled)
-			.map(|(_, new)| new.clone())
+			.filter(|user| !user.old.enabled && user.new.enabled)
+			.map(|user| user.new.clone())
 			.collect();
 
 		let changed: Vec<(User, User)> = users
 			.into_iter()
-			.filter(|(old, new)| new.enabled && old.enabled == new.enabled)
+			.filter(|user| user.new.enabled && user.old.enabled == user.new.enabled)
+			.map(|user| (user.old.clone(), user.new.clone()))
 			.collect();
 
 		for user in disabled {
@@ -110,7 +117,7 @@ impl Zitadel {
 			}
 		}
 
-		if !self.feature_flags.deactivate_only() {
+		if !self.feature_flags.is_enabled(FeatureFlag::DeactivateOnly) {
 			for user in enabled {
 				let status = self.import_user(&user).await;
 
@@ -134,7 +141,7 @@ impl Zitadel {
 	/// Update a Zitadel user
 	#[allow(clippy::unused_async, unused_variables)]
 	async fn update_user(&self, old: &User, new: &User) -> Result<()> {
-		if self.feature_flags.dry_run() {
+		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not updating user due to dry run: {:?} -> {:?}", old, new);
 			return Ok(());
 		}
@@ -182,7 +189,7 @@ impl Zitadel {
 						&self.zitadel_config.organization_id,
 						user_id.clone(),
 						new_phone.clone().to_string(),
-						!self.feature_flags.require_phone_verification(),
+						!self.feature_flags.is_enabled(FeatureFlag::VerifyPhone),
 					)
 					.await?;
 			}
@@ -195,7 +202,7 @@ impl Zitadel {
 					&self.zitadel_config.organization_id,
 					user_id.clone(),
 					new.email.clone().to_string(),
-					!self.feature_flags.require_email_verification(),
+					!self.feature_flags.is_enabled(FeatureFlag::VerifyEmail),
 				)
 				.await?;
 		};
@@ -218,7 +225,7 @@ impl Zitadel {
 
 	/// Delete a Zitadel user given only their LDAP id
 	async fn delete_user_by_id(&self, user_id: &str) -> Result<()> {
-		if self.feature_flags.dry_run() {
+		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not deleting user `{}` due to dry run", user_id);
 			return Ok(());
 		}
@@ -240,27 +247,22 @@ impl Zitadel {
 		Ok(())
 	}
 
-	/// Delete a Zitadel user given only their email address
+	/// Delete a Zitadel user given only their email address used as login name
 	async fn delete_user_by_email(&self, email: &str) -> Result<()> {
-		if self.feature_flags.dry_run() {
+		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not deleting user `{}` due to dry run", email);
 			return Ok(());
 		}
 
-		// TODO: Implement delete_user_by_email in zitadel_rust_client
+		// ! TODO: What if the email is not the login name?
 
-		/*
-			let user = self
-				.zitadel_client
-				.get_user_by_email(Some(self.config.zitadel.organization_id.clone()), email.to_owned())
-				.await?;
-			match user {
-				Some(user) => self.zitadel_client.remove_user(user.id).await?,
-				None => bail!("Could not find user with email '{email}' for deletion"),
-			}
+		let user = self.zitadel_client.get_user_by_login_name(email).await?;
+		match user {
+			Some(user) => self.zitadel_client.remove_user(user.id).await?,
+			None => tracing::info!("Could not find user with email '{email}' for deletion"),
+		}
 
-			tracing::info!("Successfully deleted user {}", email);
-		*/
+		tracing::info!("Successfully deleted user {}", email);
 
 		Ok(())
 	}
@@ -282,7 +284,7 @@ impl Zitadel {
 
 	/// Delete a Zitadel user
 	async fn delete_user(&self, user: &User) -> Result<()> {
-		if self.feature_flags.dry_run() {
+		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not deleting user due to dry run: {:?}", user);
 			return Ok(());
 		}
@@ -300,7 +302,7 @@ impl Zitadel {
 
 	/// Import a user into Zitadel
 	async fn import_user(&self, user: &User) -> Result<()> {
-		if self.feature_flags.dry_run() {
+		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not importing user due to dry run: {:?}", user);
 			return Ok(());
 		}
@@ -347,4 +349,19 @@ impl Zitadel {
 
 		Ok(())
 	}
+}
+
+/// Configuration related to Famedly Zitadel
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct ZitadelConfig {
+	/// The URL for Famedly Zitadel authentication
+	pub url: Url,
+	/// File containing a private key for authentication to Famedly Zitadel
+	pub key_file: PathBuf,
+	/// Organization ID provided by Famedly Zitadel
+	pub organization_id: String,
+	/// Project ID provided by Famedly Zitadel
+	pub project_id: String,
+	/// IDP ID provided by Famedly Zitadel
+	pub idp_id: String,
 }

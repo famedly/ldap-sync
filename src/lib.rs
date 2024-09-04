@@ -3,34 +3,18 @@
 use anyhow::Result;
 
 mod config;
-mod source_ldap;
-mod source_list;
+mod sources;
 mod user;
 mod zitadel;
 
-pub use config::{AttributeMapping, Config, FeatureFlag};
-use source_ldap::SourceLdap;
-use source_list::SourceList;
-use user::User;
+pub use config::{Config, FeatureFlag};
+pub use sources::ldap::AttributeMapping;
+use sources::{ldap::SourceLdap, ukt::SourceUkt};
 use zitadel::Zitadel;
-
-/// Trait to define sources that can be used for syncing
-trait Source {
-	/// Create a new sync source
-	fn new(config: &Config) -> Result<Self>
-	where
-		Self: Sized;
-
-	/// Get lists of all changes
-	async fn get_all_changes(&self) -> Result<(Vec<User>, Vec<(User, User)>, Vec<String>)>;
-
-	/// Get list of user emails that have been removed
-	async fn get_removed_user_emails(&self) -> Result<Vec<String>>;
-}
 
 /// Perform a sync operation
 pub async fn perform_sync(config: &Config) -> Result<()> {
-	if !config.feature_flags.require_sso_login() {
+	if !config.feature_flags.is_enabled(FeatureFlag::SsoLogin) {
 		anyhow::bail!("Non-SSO configuration is currently not supported");
 	}
 
@@ -40,19 +24,19 @@ pub async fn perform_sync(config: &Config) -> Result<()> {
 	// Perform LDAP sync
 	if config.source_ldap.is_some() {
 		let ldap_sync = SourceLdap::new(config)?;
-		let (added, changed, removed) = ldap_sync.get_all_changes().await?;
+		let ldap_changes = ldap_sync.get_all_changes().await?;
 
-		if !config.feature_flags.deactivate_only() {
-			zitadel.import_new_users(added).await?;
-			zitadel.delete_users_by_id(removed).await?;
+		if !config.feature_flags.is_enabled(FeatureFlag::DeactivateOnly) {
+			zitadel.import_new_users(ldap_changes.new_users).await?;
+			zitadel.delete_users_by_id(ldap_changes.deleted_user_ids).await?;
 		}
 
-		zitadel.update_users(changed).await?;
+		zitadel.update_users(ldap_changes.changed_users).await?;
 	}
 
-	// Perform Disable List sync
-	if config.source_list.is_some() {
-		let endpoint_sync = SourceList::new(config)?;
+	// Perform UKT sync
+	if config.source_ukt.is_some() {
+		let endpoint_sync = SourceUkt::new(config)?;
 		let removed = endpoint_sync.get_removed_user_emails().await?;
 		zitadel.delete_users_by_email(removed).await?;
 	}

@@ -293,11 +293,13 @@ async fn test_e2e_sync_deletion() {
 #[test_log(default_log_filter = "debug")]
 async fn test_e2e_ldaps() {
 	let mut config = config().await.clone();
-	if let Some(ref mut ldap_config) = config.source_ldap {
-		ldap_config.url = Url::parse("ldaps://localhost:1636").expect("invalid ldaps url");
-	} else {
-		panic!("ldap must be configured for this test");
-	}
+	config
+		.source_ldap
+		.as_mut()
+		.map(|ldap_config| {
+			ldap_config.url = Url::parse("ldaps://localhost:1636").expect("invalid ldaps url");
+		})
+		.expect("ldap must be configured for this test");
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -326,15 +328,19 @@ async fn test_e2e_ldaps() {
 #[test_log(default_log_filter = "debug")]
 async fn test_e2e_ldaps_starttls() {
 	let mut config = config().await.clone();
-	if let Some(ref mut ldap_config) = config.source_ldap {
-		if let Some(ref mut tls_config) = ldap_config.tls {
-			tls_config.danger_use_start_tls = true;
-		} else {
-			panic!("tls must be configured");
-		}
-	} else {
-		panic!("ldap must be configured for this test");
-	}
+	config
+		.source_ldap
+		.as_mut()
+		.map(|ldap_config| {
+			ldap_config
+				.tls
+				.as_mut()
+				.map(|tls_config| {
+					tls_config.danger_use_start_tls = true;
+				})
+				.expect("tls must be configured");
+		})
+		.expect("ldap must be configured for this test");
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -393,14 +399,16 @@ async fn test_e2e_binary_attr() {
 
 	// OpenLDAP checks if types match, so we need to use an attribute
 	// that can actually be binary.
-	if let Some(ref mut ldap_config) = config.source_ldap {
-		ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
-			name: "userSMIMECertificate".to_owned(),
-			is_binary: true,
-		};
-	} else {
-		panic!("ldap must be configured for this test");
-	}
+	config
+		.source_ldap
+		.as_mut()
+		.map(|ldap_config| {
+			ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
+				name: "userSMIMECertificate".to_owned(),
+				is_binary: true,
+			};
+		})
+		.expect("ldap must be configured for this test");
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -458,14 +466,16 @@ async fn test_e2e_binary_attr_valid_utf8() {
 
 	// OpenLDAP checks if types match, so we need to use an attribute
 	// that can actually be binary.
-	if let Some(ref mut ldap_config) = config.source_ldap {
-		ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
-			name: "userSMIMECertificate".to_owned(),
-			is_binary: true,
-		};
-	} else {
-		panic!("ldap must be configured for this test");
-	}
+	config
+		.source_ldap
+		.as_mut()
+		.map(|ldap_config| {
+			ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
+				name: "userSMIMECertificate".to_owned(),
+				is_binary: true,
+			};
+		})
+		.expect("ldap must be configured for this test");
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -742,11 +752,12 @@ impl Ldap {
 			attrs.push(("telephoneNumber", HashSet::from([phone])));
 		}
 
-		let base_dn = if let Some(ref ldap_config) = config().await.source_ldap {
-			ldap_config.base_dn.as_str()
-		} else {
-			panic!("ldap must be configured for this test");
-		};
+		let base_dn = config()
+			.await
+			.source_ldap
+			.as_ref()
+			.map(|ldap_config| ldap_config.base_dn.as_str())
+			.expect("ldap must be configured for this test");
 
 		self.client
 			.add(&format!("uid={},{}", uid, base_dn), attrs)
@@ -768,11 +779,12 @@ impl Ldap {
 			.map(|(attribute, changes)| Mod::Replace(attribute, changes))
 			.collect();
 
-		let base_dn = if let Some(ref source_ldap) = config().await.source_ldap {
-			source_ldap.base_dn.as_str()
-		} else {
-			panic!("ldap must be configured for this test");
-		};
+		let base_dn = config()
+			.await
+			.source_ldap
+			.as_ref()
+			.map(|ldap_config| ldap_config.base_dn.as_str())
+			.expect("ldap must be configured for this test");
 
 		self.client
 			.modify(&format!("uid={},{}", uid, base_dn), mods)
@@ -783,11 +795,12 @@ impl Ldap {
 	}
 
 	async fn delete_user(&mut self, uid: &str) {
-		let base_dn = if let Some(ref source_ldap) = config().await.source_ldap {
-			source_ldap.base_dn.as_str()
-		} else {
-			panic!("ldap must be configured for this test");
-		};
+		let base_dn = config()
+			.await
+			.source_ldap
+			.as_ref()
+			.map(|ldap_config| ldap_config.base_dn.as_str())
+			.expect("ldap must be configured for this test");
 
 		self.client
 			.delete(&format!("uid={},{}", uid, base_dn))

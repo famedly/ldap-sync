@@ -1,12 +1,16 @@
-source_list:
+source_ukt:
   # Endpoint URL to fetch the list of users from.
-  url: https://list.example.invalid
+  endpoint_url: https://list.example.invalid/usersync4chat/maillist
+  # OAuth2 URL to fetch the token from.
+  oauth2_url: https://list.example.invalid/token
   # Client ID
-  client_id: 123456
+  client_id: mock_client_id
   # Client Secret
-  client_secret: abcdef
+  client_secret: mock_client_secret
   # Scope of what to fetch
-  scope: "read-maillist"
+  scope: "openid read-maillist"
+  # Grant type
+  grant_type: client_credentials
   
 source_ldap:
   # The URl of the ldap server to be synced.
