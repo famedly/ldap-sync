@@ -1,3 +1,7 @@
+source_csv:
+  # Path to the CSV file to sync from.
+  file_path: ./test_users.csv
+
 source_ukt:
   # Endpoint URL to fetch the list of users from.
   endpoint_url: https://list.example.invalid/usersync4chat/maillist

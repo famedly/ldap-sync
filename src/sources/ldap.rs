@@ -1,4 +1,4 @@
-//! LDAP -> Famedly Zitadel sync tool.
+//! LDAP source for us to sync with Famedly Zitadel.
 
 use std::{
 	fmt::Display,
@@ -189,6 +189,7 @@ pub async fn read_cache(path: &Path) -> Result<Option<Cache>> {
 }
 
 /// Return format from LDAP poller
+#[derive(Debug)]
 pub struct LdapChanges {
 	/// New users
 	pub new_users: Vec<User>,
@@ -199,6 +200,7 @@ pub struct LdapChanges {
 }
 
 /// A user that has changed returned from the LDAP poller
+#[derive(Debug)]
 pub struct ChangedUser {
 	/// The old state
 	pub old: User,

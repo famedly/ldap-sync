@@ -24,6 +24,7 @@ uuid = { version = "1.10.0", features = ["v5"] }
 zitadel-rust-client = { git = "https://github.com/famedly/zitadel-rust-client", version = "0.1.0" }
 reqwest = { version = "0.12.7", features = ["json"] }
 chrono = "0.4.19"
+csv = "1.1"
 
 [dependencies.tonic]
 version = "*"

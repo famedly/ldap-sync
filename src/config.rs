@@ -9,7 +9,7 @@ use serde::Deserialize;
 use url::Url;
 
 use crate::{
-	sources::{ldap::SourceLdapConfig, ukt::SourceUktConfig},
+	sources::{csv::SourceCsvConfig, ldap::SourceLdapConfig, ukt::SourceUktConfig},
 	zitadel::ZitadelConfig,
 };
 
@@ -29,6 +29,8 @@ pub struct Config {
 	pub source_ldap: Option<SourceLdapConfig>,
 	/// Optional Disable List configuration
 	pub source_ukt: Option<SourceUktConfig>,
+	/// Optional CSV configuration
+	pub source_csv: Option<SourceCsvConfig>,
 	/// Optional sync tool log level
 	pub log_level: Option<String>,
 	/// Opt-in features
@@ -178,7 +180,7 @@ mod tests {
         cache_path: ./test
 	"#};
 
-	fn full_config_example() -> Config {
+	fn load_config() -> Config {
 		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
 	}
 
@@ -303,7 +305,7 @@ mod tests {
 		let file_path = create_config_file(tempdir.path());
 		let config = Config::new(file_path.as_path()).expect("Failed to create config object");
 
-		assert_eq!(full_config_example(), config);
+		assert_eq!(load_config(), config);
 	}
 
 	#[test]
@@ -318,7 +320,7 @@ mod tests {
 			Config::new(file_path.as_path()).expect("Failed to create config object");
 		env::remove_var(env_var_name);
 
-		let mut sample_config = full_config_example();
+		let mut sample_config = load_config();
 		sample_config
 			.source_ldap
 			.as_mut()
@@ -344,7 +346,7 @@ mod tests {
 			env::remove_var(key);
 		}
 
-		assert_eq!(full_config_example(), config);
+		assert_eq!(load_config(), config);
 	}
 
 	#[test]
@@ -357,7 +359,7 @@ mod tests {
 
 		let loaded_config =
 			Config::new(file_path.as_path()).expect("Failed to create config object");
-		let mut sample_config = full_config_example();
+		let mut sample_config = load_config();
 
 		sample_config.feature_flags.push(FeatureFlag::SsoLogin);
 		sample_config.feature_flags.push(FeatureFlag::VerifyEmail);

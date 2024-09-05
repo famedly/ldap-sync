@@ -1,4 +1,4 @@
-//! Endpoint -> Famedly Zitadel sync tool.
+//! UKT source for us to sync with Famedly Zitadel.
 
 use std::collections::HashMap;
 
@@ -176,7 +176,7 @@ mod tests {
         cache_path: ./test
 	"#};
 
-	fn full_config_example() -> Config {
+	fn load_config() -> Config {
 		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
 	}
 
@@ -186,7 +186,7 @@ mod tests {
 		prepare_oauth2_mock(&mock_server).await;
 
 		// Use the mock server URL in the config
-		let mut config = full_config_example();
+		let mut config = load_config();
 		config
 			.source_ukt
 			.as_mut()
@@ -208,7 +208,7 @@ mod tests {
 		prepare_oauth2_mock(&mock_server).await;
 		prepare_endpoint_mock(&mock_server).await;
 
-		let mut config = full_config_example();
+		let mut config = load_config();
 		config
 			.source_ukt
 			.as_mut()
@@ -238,7 +238,7 @@ mod tests {
 		let mock_server = MockServer::start().await;
 		prepare_endpoint_mock(&mock_server).await;
 
-		let mut config = full_config_example();
+		let mut config = load_config();
 		config
 			.source_ukt
 			.as_mut()
@@ -263,7 +263,7 @@ mod tests {
 	#[ignore]
 	/// Connects to the real URL in config to get the OAuth2 token
 	async fn real_test_get_oauth2_token() {
-		let config = full_config_example();
+		let config = load_config();
 
 		let source_ukt = SourceUkt::new(&config).expect("Failed to create SourceUkt");
 
@@ -276,7 +276,7 @@ mod tests {
 	#[ignore]
 	/// Connects to the real URL in config to get the email list
 	async fn real_test_fetch_list() {
-		let config = full_config_example();
+		let config = load_config();
 
 		let source_ukt = SourceUkt::new(&config).expect("Failed to create SourceUkt");
 

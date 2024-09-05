@@ -119,3 +119,9 @@ impl Display for StringOrBytes {
 		}
 	}
 }
+
+impl From<String> for StringOrBytes {
+	fn from(value: String) -> Self {
+		Self::String(value)
+	}
+}

@@ -331,16 +331,11 @@ async fn test_e2e_ldaps_starttls() {
 	config
 		.source_ldap
 		.as_mut()
-		.map(|ldap_config| {
-			ldap_config
-				.tls
-				.as_mut()
-				.map(|tls_config| {
-					tls_config.danger_use_start_tls = true;
-				})
-				.expect("tls must be configured");
-		})
-		.expect("ldap must be configured for this test");
+		.expect("source_ldap must be configured")
+		.tls
+		.as_mut()
+		.expect("tls must be configured")
+		.danger_use_start_tls = true;
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -402,13 +397,12 @@ async fn test_e2e_binary_attr() {
 	config
 		.source_ldap
 		.as_mut()
-		.map(|ldap_config| {
-			ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
-				name: "userSMIMECertificate".to_owned(),
-				is_binary: true,
-			};
-		})
-		.expect("ldap must be configured for this test");
+		.expect("ldap must be configured for this test")
+		.attributes
+		.preferred_username = AttributeMapping::OptionalBinary {
+		name: "userSMIMECertificate".to_owned(),
+		is_binary: true,
+	};
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -469,13 +463,12 @@ async fn test_e2e_binary_attr_valid_utf8() {
 	config
 		.source_ldap
 		.as_mut()
-		.map(|ldap_config| {
-			ldap_config.attributes.preferred_username = AttributeMapping::OptionalBinary {
-				name: "userSMIMECertificate".to_owned(),
-				is_binary: true,
-			};
-		})
-		.expect("ldap must be configured for this test");
+		.expect("ldap must be configured for this test")
+		.attributes
+		.preferred_username = AttributeMapping::OptionalBinary {
+		name: "userSMIMECertificate".to_owned(),
+		is_binary: true,
+	};
 
 	let mut ldap = Ldap::new().await;
 	ldap.create_user(
@@ -756,8 +749,9 @@ impl Ldap {
 			.await
 			.source_ldap
 			.as_ref()
-			.map(|ldap_config| ldap_config.base_dn.as_str())
-			.expect("ldap must be configured for this test");
+			.expect("ldap must be configured for this test")
+			.base_dn
+			.as_str();
 
 		self.client
 			.add(&format!("uid={},{}", uid, base_dn), attrs)
@@ -783,8 +777,9 @@ impl Ldap {
 			.await
 			.source_ldap
 			.as_ref()
-			.map(|ldap_config| ldap_config.base_dn.as_str())
-			.expect("ldap must be configured for this test");
+			.expect("ldap must be configured for this test")
+			.base_dn
+			.as_str();
 
 		self.client
 			.modify(&format!("uid={},{}", uid, base_dn), mods)
@@ -799,8 +794,9 @@ impl Ldap {
 			.await
 			.source_ldap
 			.as_ref()
-			.map(|ldap_config| ldap_config.base_dn.as_str())
-			.expect("ldap must be configured for this test");
+			.expect("ldap must be configured for this test")
+			.base_dn
+			.as_str();
 
 		self.client
 			.delete(&format!("uid={},{}", uid, base_dn))
