@@ -22,6 +22,14 @@ url = "2.5.2"
 uuid = { version = "1.10.0", features = ["v5"] }
 zitadel-rust-client = { git = "https://github.com/famedly/zitadel-rust-client", version = "0.1.0" }
 
+[dependencies.tonic]
+version = "*"
+features = ["tls-roots"]
+
+[dependencies.reqwest]
+version = "*"
+features = ["rustls-tls-native-roots"]
+
 [build-dependencies]
 vergen = { version = "8.2.6", features = ["git", "gitcl", "build"] } # vergen passes metadata like the version and git commit hash to cargo as a compile-time environment variables
 
