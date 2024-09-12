@@ -1,8 +1,9 @@
 experimental = ["setup-scripts"]
 
 [test-groups]
-# E2E tests rely on syncing data from ldap; if multiple tests create
-# users simultaneously, one thread will "win" and sync its users first
+# E2E tests rely on syncing data from other sources;
+# if multiple tests create users simultaneously,
+# one thread will "win" and sync its users first
 # (or nobody wins and a bunch of tests try to create users that
 # already exist) - we don't want this.
 e2e = { max-threads = 1 }

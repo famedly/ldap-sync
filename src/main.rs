@@ -1,8 +1,8 @@
-//! Basic LDAP -> Famedly's Zitadel sync tool
+//! Tool for syncing different sources to Famedly's Zitadel
 use std::{path::Path, process::ExitCode, str::FromStr};
 
-use anyhow::Context;
-use ldap_sync::{perform_sync, Config};
+use anyhow::{Context, Result};
+use ldap_sync::Config;
 use tracing::level_filters::LevelFilter;
 
 #[tokio::main]
@@ -18,8 +18,7 @@ async fn main() -> ExitCode {
 
 /// Simple entrypoint without any bells or whistles
 #[allow(clippy::print_stderr)]
-async fn run_sync() -> anyhow::Result<()> {
-	// Load CONFIG
+async fn run_sync() -> Result<()> {
 	let config = {
 		let config_path = std::env::var("FAMEDLY_LDAP_SYNC_CONFIG").unwrap_or("config.yaml".into());
 		let config_path = Path::new(&config_path);
@@ -34,7 +33,6 @@ async fn run_sync() -> anyhow::Result<()> {
 		}
 	};
 
-	// Set up TRACING
 	let subscriber = tracing_subscriber::FmtSubscriber::builder()
 		.with_max_level(
 			config
@@ -46,6 +44,5 @@ async fn run_sync() -> anyhow::Result<()> {
 	tracing::subscriber::set_global_default(subscriber)
 		.context("Setting default tracing subscriber failed")?;
 
-	// Run the SYNC
-	perform_sync(&config).await
+	config.perform_sync().await
 }

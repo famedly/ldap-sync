@@ -4,7 +4,9 @@ use std::fmt::Display;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use zitadel_rust_client::{Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile};
 
-/// Crate-internal representation of a Zitadel/LDAP user
+use crate::{config::FeatureFlags, FeatureFlag};
+
+/// Source-agnostic representation of a user
 #[derive(Clone, Debug)]
 pub(crate) struct User {
 	/// The user's first name
@@ -21,6 +23,25 @@ pub(crate) struct User {
 	pub(crate) phone: Option<StringOrBytes>,
 	/// Whether the user is enabled
 	pub(crate) enabled: bool,
+}
+
+impl User {
+	/// Convert the agnostic user to a Zitadel user
+	pub fn to_zitadel_user(&self, feature_flags: &FeatureFlags, idp_id: &str) -> ZidatelUser {
+		ZidatelUser {
+			user_data: self.clone(),
+			needs_email_verification: feature_flags.is_enabled(FeatureFlag::VerifyEmail),
+			needs_phone_verification: feature_flags.is_enabled(FeatureFlag::VerifyPhone),
+			idp_id: feature_flags.contains(&FeatureFlag::SsoLogin).then(|| idp_id.to_owned()),
+		}
+	}
+}
+
+/// Crate-internal representation of a Zitadel user
+#[derive(Clone, Debug)]
+pub struct ZidatelUser {
+	/// Details about the user
+	pub(crate) user_data: User,
 
 	/// Whether the user should be prompted to verify their email
 	pub(crate) needs_email_verification: bool,
@@ -30,15 +51,15 @@ pub(crate) struct User {
 	pub(crate) idp_id: Option<String>,
 }
 
-impl User {
+impl ZidatelUser {
 	/// Get a display name for the user
 	pub(crate) fn get_display_name(&self) -> String {
-		format!("{}, {}", self.last_name, self.first_name)
+		format!("{}, {}", self.user_data.last_name, self.user_data.first_name)
 	}
 
 	/// Return the name to be used in logs to identify this user
 	pub(crate) fn log_name(&self) -> String {
-		format!("email={}", &self.email)
+		format!("email={}", &self.user_data.email)
 	}
 
 	/// Get idp link as required by Zitadel
@@ -46,7 +67,7 @@ impl User {
 		if let Some(idp_id) = self.idp_id.clone() {
 			vec![Idp {
 				config_id: idp_id,
-				external_user_id: self.ldap_id.clone().to_string(),
+				external_user_id: self.user_data.ldap_id.clone().to_string(),
 				display_name: self.get_display_name(),
 			}]
 		} else {
@@ -55,23 +76,23 @@ impl User {
 	}
 }
 
-impl From<User> for ImportHumanUserRequest {
-	fn from(user: User) -> Self {
+impl From<ZidatelUser> for ImportHumanUserRequest {
+	fn from(user: ZidatelUser) -> Self {
 		Self {
-			user_name: user.email.clone().to_string(),
+			user_name: user.user_data.email.clone().to_string(),
 			profile: Some(Profile {
-				first_name: user.first_name.clone().to_string(),
-				last_name: user.last_name.clone().to_string(),
+				first_name: user.user_data.first_name.clone().to_string(),
+				last_name: user.user_data.last_name.clone().to_string(),
 				display_name: user.get_display_name(),
 				gender: Gender::Unspecified.into(), // 0 means "unspecified",
-				nick_name: user.ldap_id.clone().to_string(),
+				nick_name: user.user_data.ldap_id.clone().to_string(),
 				preferred_language: String::default(),
 			}),
 			email: Some(Email {
-				email: user.email.clone().to_string(),
+				email: user.user_data.email.clone().to_string(),
 				is_email_verified: !user.needs_email_verification,
 			}),
-			phone: user.phone.as_ref().map(|phone| Phone {
+			phone: user.user_data.phone.as_ref().map(|phone| Phone {
 				phone: phone.to_owned().to_string(),
 				is_phone_verified: !user.needs_phone_verification,
 			}),
@@ -85,9 +106,9 @@ impl From<User> for ImportHumanUserRequest {
 	}
 }
 
-impl Display for User {
+impl Display for ZidatelUser {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		write!(f, "email={}", &self.email)
+		write!(f, "email={}", &self.user_data.email)
 	}
 }
 

@@ -12,8 +12,7 @@ use zitadel_rust_client::{
 
 use crate::{
 	config::{Config, FeatureFlags},
-	sources::ldap::ChangedUser,
-	user::{StringOrBytes, User},
+	user::{StringOrBytes, User, ZidatelUser},
 	FeatureFlag,
 };
 
@@ -26,7 +25,7 @@ const FAMEDLY_USER_ROLE: &str = "User";
 /// A very high-level Zitadel zitadel_client
 #[derive(Clone)]
 pub(crate) struct Zitadel {
-	/// ldap-sync configuration
+	/// Zitadel configuration
 	zitadel_config: ZitadelConfig,
 	/// Optional set of features
 	feature_flags: FeatureFlags,
@@ -37,15 +36,13 @@ pub(crate) struct Zitadel {
 impl Zitadel {
 	/// Construct the Zitadel instance
 	pub(crate) async fn new(config: &Config) -> Result<Self> {
-		let zitadel_client = ZitadelClient::new(
-			config.zitadel_config.url.clone(),
-			config.zitadel_config.key_file.clone(),
-		)
-		.await
-		.context("failed to configure zitadel_client")?;
+		let zitadel_client =
+			ZitadelClient::new(config.zitadel.url.clone(), config.zitadel.key_file.clone())
+				.await
+				.context("failed to configure zitadel_client")?;
 
 		Ok(Self {
-			zitadel_config: config.zitadel_config.clone(),
+			zitadel_config: config.zitadel.clone(),
 			feature_flags: config.feature_flags.clone(),
 			zitadel_client,
 		})
@@ -53,10 +50,12 @@ impl Zitadel {
 	/// Import a list of new users into Zitadel
 	pub(crate) async fn import_new_users(&self, users: Vec<User>) -> Result<()> {
 		for user in users {
-			let sync_status = self.import_user(&user).await;
+			let zitadel_user =
+				user.to_zitadel_user(&self.feature_flags, &self.zitadel_config.idp_id);
+			let sync_status = self.import_user(&zitadel_user).await;
 
 			if let Err(error) = sync_status {
-				tracing::error!("Failed to sync user `{}`: {}", user.log_name(), error);
+				tracing::error!("Failed to sync user `{}`: {:?}", zitadel_user.log_name(), error);
 			};
 		}
 
@@ -64,25 +63,27 @@ impl Zitadel {
 	}
 
 	/// Delete a list of Zitadel users given their IDs
-	pub(crate) async fn delete_users_by_id(&self, users: Vec<String>) -> Result<()> {
+	pub(crate) async fn delete_users_by_id(&self, users: Vec<UserId>) -> Result<()> {
 		for user_id in users {
-			let status = self.delete_user_by_id(&user_id).await;
-
-			if let Err(error) = status {
-				tracing::error!("Failed to delete user `{}`: {}", user_id, error);
-			}
-		}
-
-		Ok(())
-	}
-
-	/// Delete a list of Zitadel users given their Email Addresses
-	pub(crate) async fn delete_users_by_email(&self, users: Vec<String>) -> Result<()> {
-		for email in users {
-			let status = self.delete_user_by_email(&email).await;
-
-			if let Err(error) = status {
-				tracing::error!("Failed to delete user `{}`: {}", email, error);
+			match user_id {
+				UserId::Login(login) => {
+					let status = self.delete_user_by_email(&login).await;
+					if let Err(error) = status {
+						tracing::error!("Failed to delete user by email `{}`: {:?}", login, error);
+					}
+				}
+				UserId::Nick(nick) => {
+					let status = self.delete_user_by_nick(&nick).await;
+					if let Err(error) = status {
+						tracing::error!("Failed to delete user by nick `{}`: {:?}", nick, error);
+					}
+				}
+				UserId::ZitadelId(id) => {
+					let status = self.delete_user_by_id(&id).await;
+					if let Err(error) = status {
+						tracing::error!("Failed to delete user by id `{}`: {:?}", id, error);
+					}
+				}
 			}
 		}
 
@@ -91,29 +92,42 @@ impl Zitadel {
 
 	/// Update a list of old/new user maps
 	pub(crate) async fn update_users(&self, users: Vec<ChangedUser>) -> Result<()> {
-		let disabled: Vec<User> = users
+		let disabled: Vec<ZidatelUser> = users
 			.iter()
 			.filter(|user| user.old.enabled && !user.new.enabled)
-			.map(|user| user.new.clone())
+			.map(|user| {
+				user.new.to_zitadel_user(&self.feature_flags, &self.zitadel_config.idp_id).clone()
+			})
 			.collect();
 
-		let enabled: Vec<User> = users
+		let enabled: Vec<ZidatelUser> = users
 			.iter()
 			.filter(|user| !user.old.enabled && user.new.enabled)
-			.map(|user| user.new.clone())
+			.map(|user| {
+				user.new.to_zitadel_user(&self.feature_flags, &self.zitadel_config.idp_id).clone()
+			})
 			.collect();
 
-		let changed: Vec<(User, User)> = users
+		let changed: Vec<(ZidatelUser, ZidatelUser)> = users
 			.into_iter()
 			.filter(|user| user.new.enabled && user.old.enabled == user.new.enabled)
-			.map(|user| (user.old.clone(), user.new.clone()))
+			.map(|user| {
+				(
+					user.old
+						.to_zitadel_user(&self.feature_flags, &self.zitadel_config.idp_id)
+						.clone(),
+					user.new
+						.to_zitadel_user(&self.feature_flags, &self.zitadel_config.idp_id)
+						.clone(),
+				)
+			})
 			.collect();
 
 		for user in disabled {
 			let status = self.delete_user(&user).await;
 
 			if let Err(error) = status {
-				tracing::error!("Failed to delete user `{}`: {}`", user.log_name(), error);
+				tracing::error!("Failed to delete user `{}`: {:?}`", user.log_name(), error);
 			}
 		}
 
@@ -122,7 +136,7 @@ impl Zitadel {
 				let status = self.import_user(&user).await;
 
 				if let Err(error) = status {
-					tracing::error!("Failed to re-create user `{}`: {}", user.log_name(), error);
+					tracing::error!("Failed to re-create user `{}`: {:?}", user.log_name(), error);
 				}
 			}
 
@@ -130,7 +144,7 @@ impl Zitadel {
 				let status = self.update_user(&old, &new).await;
 
 				if let Err(error) = status {
-					tracing::error!("Failed to update user `{}`: {}", new.log_name(), error);
+					tracing::error!("Failed to update user `{}`: {:?}", new.log_name(), error);
 				}
 			}
 		}
@@ -140,35 +154,41 @@ impl Zitadel {
 
 	/// Update a Zitadel user
 	#[allow(clippy::unused_async, unused_variables)]
-	async fn update_user(&self, old: &User, new: &User) -> Result<()> {
+	async fn update_user(&self, old: &ZidatelUser, new: &ZidatelUser) -> Result<()> {
 		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not updating user due to dry run: {:?} -> {:?}", old, new);
 			return Ok(());
 		}
 
 		let Some(user_id) = self.get_user_id(old).await? else {
-			bail!("could not find user `{}` to update", old.email);
+			bail!("could not find user `{}` to update", old.user_data.email);
 		};
 
-		if old.email != new.email {
+		if old.user_data.email != new.user_data.email {
 			self.zitadel_client
 				.update_human_user_name(
 					&self.zitadel_config.organization_id,
 					user_id.clone(),
-					new.email.clone().to_string(),
+					new.user_data.email.clone().to_string(),
 				)
 				.await?;
 
-			tracing::warn!("User email/login changed for {} -> {}", old.email, new.email);
+			tracing::warn!(
+				"User email/login changed for {} -> {}",
+				old.user_data.email,
+				new.user_data.email
+			);
 		};
 
-		if old.first_name != new.first_name || old.last_name != new.last_name {
+		if old.user_data.first_name != new.user_data.first_name
+			|| old.user_data.last_name != new.user_data.last_name
+		{
 			self.zitadel_client
 				.update_human_user_profile(
 					&self.zitadel_config.organization_id,
 					user_id.clone(),
-					new.first_name.clone().to_string(),
-					new.last_name.clone().to_string(),
+					new.user_data.first_name.clone().to_string(),
+					new.user_data.last_name.clone().to_string(),
 					None,
 					Some(new.get_display_name()),
 					None,
@@ -177,7 +197,7 @@ impl Zitadel {
 				.await?;
 		};
 
-		match (&old.phone, &new.phone) {
+		match (&old.user_data.phone, &new.user_data.phone) {
 			(Some(_), None) => {
 				self.zitadel_client
 					.remove_human_user_phone(&self.zitadel_config.organization_id, user_id.clone())
@@ -196,29 +216,29 @@ impl Zitadel {
 			(None, None) => {}
 		};
 
-		if old.email != new.email {
+		if old.user_data.email != new.user_data.email {
 			self.zitadel_client
 				.update_human_user_email(
 					&self.zitadel_config.organization_id,
 					user_id.clone(),
-					new.email.clone().to_string(),
+					new.user_data.email.clone().to_string(),
 					!self.feature_flags.is_enabled(FeatureFlag::VerifyEmail),
 				)
 				.await?;
 		};
 
-		if old.preferred_username != new.preferred_username {
+		if old.user_data.preferred_username != new.user_data.preferred_username {
 			self.zitadel_client
 				.set_user_metadata(
 					Some(&self.zitadel_config.organization_id),
 					user_id,
 					"preferred_username".to_owned(),
-					&new.preferred_username.clone().to_string(),
+					&new.user_data.preferred_username.clone().to_string(),
 				)
 				.await?;
 		};
 
-		tracing::info!("Successfully updated user {}", old.email);
+		tracing::info!("Successfully updated user {}", old.user_data.email);
 
 		Ok(())
 	}
@@ -254,8 +274,6 @@ impl Zitadel {
 			return Ok(());
 		}
 
-		// ! TODO: What if the email is not the login name?
-
 		let user = self.zitadel_client.get_user_by_login_name(email).await?;
 		match user {
 			Some(user) => self.zitadel_client.remove_user(user.id).await?,
@@ -267,11 +285,37 @@ impl Zitadel {
 		Ok(())
 	}
 
+	/// Delete a Zitadel user given only their nick name
+	async fn delete_user_by_nick(&self, nick: &str) -> Result<()> {
+		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
+			tracing::info!("Not deleting user `{}` due to dry run", nick);
+			return Ok(());
+		}
+
+		let user = self
+			.zitadel_client
+			.get_user_by_nick_name(
+				Some(self.zitadel_config.organization_id.clone()),
+				nick.to_owned(),
+			)
+			.await?;
+		match user {
+			Some(user) => self.zitadel_client.remove_user(user.id).await?,
+			None => tracing::info!("Could not find user with nick '{nick}' for deletion"),
+		}
+
+		tracing::info!("Successfully deleted user {}", nick);
+
+		Ok(())
+	}
+
 	/// Retrieve the Zitadel user ID of a user, or None if the user
 	/// cannot be found
-	async fn get_user_id(&self, user: &User) -> Result<Option<String>> {
-		let status =
-			self.zitadel_client.get_user_by_login_name(&user.email.clone().to_string()).await;
+	async fn get_user_id(&self, user: &ZidatelUser) -> Result<Option<String>> {
+		let status = self
+			.zitadel_client
+			.get_user_by_login_name(&user.user_data.email.clone().to_string())
+			.await;
 
 		if let Err(ZitadelError::TonicResponseError(ref error)) = status {
 			if error.code() == TonicErrorCode::NotFound {
@@ -283,7 +327,7 @@ impl Zitadel {
 	}
 
 	/// Delete a Zitadel user
-	async fn delete_user(&self, user: &User) -> Result<()> {
+	async fn delete_user(&self, user: &ZidatelUser) -> Result<()> {
 		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not deleting user due to dry run: {:?}", user);
 			return Ok(());
@@ -292,18 +336,23 @@ impl Zitadel {
 		if let Some(user_id) = self.get_user_id(user).await? {
 			self.zitadel_client.remove_user(user_id).await?;
 		} else {
-			bail!("could not find user `{}` for deletion", user.email);
+			bail!("could not find user `{}` for deletion", user.user_data.email);
 		}
 
-		tracing::info!("Successfully deleted user {}", user.email);
+		tracing::info!("Successfully deleted user {}", user.user_data.email);
 
 		Ok(())
 	}
 
 	/// Import a user into Zitadel
-	async fn import_user(&self, user: &User) -> Result<()> {
+	async fn import_user(&self, user: &ZidatelUser) -> Result<()> {
 		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not importing user due to dry run: {:?}", user);
+			return Ok(());
+		}
+
+		if !user.user_data.enabled {
+			tracing::info!("Not importing disabled user: {:?}", user);
 			return Ok(());
 		}
 
@@ -317,11 +366,11 @@ impl Zitadel {
 				Some(&self.zitadel_config.organization_id),
 				new_user_id.clone(),
 				"preferred_username".to_owned(),
-				&user.preferred_username.clone().to_string(),
+				&user.user_data.preferred_username.clone().to_string(),
 			)
 			.await?;
 
-		let id = match &user.ldap_id {
+		let id = match &user.user_data.ldap_id {
 			StringOrBytes::String(value) => value.as_bytes(),
 			StringOrBytes::Bytes(value) => value,
 		};
@@ -345,7 +394,7 @@ impl Zitadel {
 			)
 			.await?;
 
-		tracing::info!("Successfully imported user {}", user.email);
+		tracing::info!("Successfully imported user {:?}", user);
 
 		Ok(())
 	}
@@ -364,4 +413,36 @@ pub struct ZitadelConfig {
 	pub project_id: String,
 	/// IDP ID provided by Famedly Zitadel
 	pub idp_id: String,
+}
+
+/// The different ways to identify a user in Zitadel
+#[derive(Debug)]
+#[allow(dead_code)]
+pub enum UserId {
+	/// The login name is actually the email address
+	Login(String),
+	/// The nick name is actually the LDAP ID
+	Nick(String),
+	/// The Zitadel ID
+	ZitadelId(String),
+}
+
+/// The difference between the source and Zitadel
+#[derive(Debug)]
+pub struct SourceDiff {
+	/// New users
+	pub new_users: Vec<User>,
+	/// Changed users
+	pub changed_users: Vec<ChangedUser>,
+	/// Deleted user IDs
+	pub deleted_user_ids: Vec<UserId>,
+}
+
+/// A user that has changed returned from the LDAP poller
+#[derive(Debug)]
+pub struct ChangedUser {
+	/// The old state
+	pub old: User,
+	/// The new state
+	pub new: User,
 }

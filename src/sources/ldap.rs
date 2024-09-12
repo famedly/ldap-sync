@@ -1,4 +1,4 @@
-//! LDAP source for us to sync with Famedly Zitadel.
+//! LDAP source for syncing with Famedly's Zitadel.
 
 use std::{
 	fmt::Display,
@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Context, Result};
+use async_trait::async_trait;
 use ldap_poller::{
 	config::TLSConfig, ldap::EntryStatus, ldap3::SearchEntry, AttributeConfig, Cache, CacheMethod,
 	ConnectionConfig, Ldap, SearchEntryExt, Searches,
@@ -15,42 +16,32 @@ use tokio::sync::mpsc::Receiver;
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use url::Url;
 
+use super::Source;
 use crate::{
-	config::FeatureFlags,
 	user::{StringOrBytes, User},
-	FeatureFlag,
+	zitadel::{ChangedUser, SourceDiff, UserId},
 };
 
 /// LDAP sync source
-pub struct SourceLdap {
+pub struct LdapSource {
 	/// LDAP configuration
-	ldap_config: SourceLdapConfig,
-	/// Optional set of features
-	feature_flags: FeatureFlags,
-	/// Where to cache the last known LDAP state
-	cache_path: PathBuf,
+	ldap_config: LdapSourceConfig,
+	/// Dry run flag (prevents writing cache)
+	is_dry_run: bool,
 }
 
-impl SourceLdap {
-	/// Create a new LDAP sync source
-	pub fn new(config: &crate::Config) -> Result<Self> {
-		Ok(Self {
-			ldap_config: match config.source_ldap.clone() {
-				Some(ldap) => ldap,
-				None => bail!("LDAP configuration is missing"),
-			},
-			feature_flags: config.feature_flags.clone(),
-			cache_path: config.cache_path.clone(),
-		})
+#[async_trait]
+impl Source for LdapSource {
+	fn get_name(&self) -> &'static str {
+		"LDAP"
 	}
 
-	/// Get all changes from the LDAP server
-	pub async fn get_all_changes(&self) -> Result<LdapChanges> {
-		let cache = read_cache(&self.cache_path).await?;
+	async fn get_diff(&self) -> Result<SourceDiff> {
+		let cache = read_cache(&self.ldap_config.cache_path).await?;
 		let (mut ldap_client, ldap_receiver) = Ldap::new(self.ldap_config.clone().into(), cache);
 
-		let is_dry_run = self.feature_flags.is_enabled(FeatureFlag::DryRun);
-		let cache_path = self.cache_path.clone();
+		let is_dry_run = self.is_dry_run;
+		let cache_path = self.ldap_config.cache_path.clone();
 
 		let sync_handle: tokio::task::JoinHandle<Result<_>> = tokio::spawn(async move {
 			ldap_client.sync_once(None).await.context("failed to sync/fetch data from LDAP")?;
@@ -76,33 +67,40 @@ impl SourceLdap {
 
 		sync_handle.await??;
 
-		Ok(LdapChanges {
+		Ok(SourceDiff {
 			new_users: added,
 			changed_users: changed.into_iter().map(|(old, new)| ChangedUser { old, new }).collect(),
 			deleted_user_ids: removed,
 		})
+	}
+}
+
+impl LdapSource {
+	/// Create a new LDAP source
+	pub fn new(ldap_config: LdapSourceConfig, is_dry_run: bool) -> Self {
+		Self { ldap_config, is_dry_run }
 	}
 
 	/// Get user changes from an ldap receiver
 	pub async fn get_user_changes(
 		&self,
 		ldap_receiver: Receiver<EntryStatus>,
-	) -> Result<(Vec<User>, Vec<(User, User)>, Vec<String>)> {
+	) -> Result<(Vec<User>, Vec<(User, User)>, Vec<UserId>)> {
 		ReceiverStream::new(ldap_receiver)
 			.fold(Ok((vec![], vec![], vec![])), |acc, entry_status| {
 				let (mut added, mut changed, mut removed) = acc?;
 				match entry_status {
 					EntryStatus::New(entry) => {
 						tracing::debug!("New entry: {:?}", entry);
-						added.push(self.parse_user(entry, None)?);
+						added.push(self.parse_user(entry)?);
 					}
 					EntryStatus::Changed { old, new } => {
 						tracing::debug!("Changes found for {:?} -> {:?}", old, new);
-						changed.push((self.parse_user(old, None)?, self.parse_user(new, None)?));
+						changed.push((self.parse_user(old)?, self.parse_user(new)?));
 					}
 					EntryStatus::Removed(entry) => {
 						tracing::debug!("Deleted user {}", String::from_utf8_lossy(&entry));
-						removed.push(String::from_utf8(entry.clone())?);
+						removed.push(UserId::Nick(String::from_utf8(entry.clone())?));
 					}
 				};
 				Ok((added, changed, removed))
@@ -111,12 +109,15 @@ impl SourceLdap {
 	}
 
 	/// Construct a user from an LDAP SearchEntry
-	pub(crate) fn parse_user(&self, entry: SearchEntry, idp_id: Option<&str>) -> Result<User> {
+	pub(crate) fn parse_user(&self, entry: SearchEntry) -> Result<User> {
 		let status_as_int = match read_search_entry(&entry, &self.ldap_config.attributes.status)? {
 			StringOrBytes::String(status) => status.parse::<i32>()?,
-			StringOrBytes::Bytes(status) => i32::from_be_bytes(
-				status.try_into().map_err(|_| anyhow!("failed to convert to i32 flag"))?,
-			),
+			StringOrBytes::Bytes(status) => {
+				i32::from_be_bytes(status.try_into().map_err(|err: Vec<u8>| {
+					let err_string = String::from_utf8_lossy(&err).to_string();
+					anyhow!(err_string).context("failed to convert to i32 flag")
+				})?)
+			}
 		};
 		let enabled = !self
 			.ldap_config
@@ -141,9 +142,6 @@ impl SourceLdap {
 			ldap_id: user_id,
 			phone,
 			enabled,
-			needs_email_verification: self.feature_flags.is_enabled(FeatureFlag::VerifyEmail),
-			needs_phone_verification: self.feature_flags.is_enabled(FeatureFlag::VerifyPhone),
-			idp_id: idp_id.map(ToOwned::to_owned),
 		})
 	}
 }
@@ -188,29 +186,9 @@ pub async fn read_cache(path: &Path) -> Result<Option<Cache>> {
 	})
 }
 
-/// Return format from LDAP poller
-#[derive(Debug)]
-pub struct LdapChanges {
-	/// New users
-	pub new_users: Vec<User>,
-	/// Changed users
-	pub changed_users: Vec<ChangedUser>,
-	/// Deleted user IDs
-	pub deleted_user_ids: Vec<String>,
-}
-
-/// A user that has changed returned from the LDAP poller
-#[derive(Debug)]
-pub struct ChangedUser {
-	/// The old state
-	pub old: User,
-	/// The new state
-	pub new: User,
-}
-
 /// LDAP-specific configuration
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub struct SourceLdapConfig {
+pub struct LdapSourceConfig {
 	/// The URL of the LDAP/AD server
 	pub url: Url,
 	/// The base DN for searching users
@@ -235,10 +213,12 @@ pub struct SourceLdapConfig {
 	pub use_attribute_filter: bool,
 	/// TLS-related configuration
 	pub tls: Option<LdapTlsConfig>,
+	/// Where to cache the last known LDAP state
+	pub cache_path: PathBuf,
 }
 
-impl From<SourceLdapConfig> for ldap_poller::Config {
-	fn from(cfg: SourceLdapConfig) -> ldap_poller::Config {
+impl From<LdapSourceConfig> for ldap_poller::Config {
+	fn from(cfg: LdapSourceConfig) -> ldap_poller::Config {
 		let starttls = cfg.tls.as_ref().is_some_and(|tls| tls.danger_use_start_tls);
 		let no_tls_verify = cfg.tls.as_ref().is_some_and(|tls| tls.danger_disable_tls_verify);
 		let root_certificates_path =
@@ -381,4 +361,214 @@ pub struct LdapTlsConfig {
 	/// be preferred.
 	#[serde(default)]
 	pub danger_use_start_tls: bool,
+}
+
+#[cfg(test)]
+mod tests {
+	use std::collections::HashMap;
+
+	use indoc::indoc;
+	use ldap3::SearchEntry;
+	use ldap_poller::ldap::EntryStatus;
+	use tokio::sync::mpsc;
+
+	use crate::{sources::ldap::LdapSource, user::StringOrBytes, Config};
+
+	const EXAMPLE_CONFIG: &str = indoc! {r#"
+        zitadel:
+          url: http://localhost:8080
+          key_file: tests/environment/zitadel/service-user.json
+          organization_id: 1
+          project_id: 1
+          idp_id: 1
+        
+        sources:
+          ldap:
+            url: ldap://localhost:1389
+            base_dn: ou=testorg,dc=example,dc=org
+            bind_dn: cn=admin,dc=example,dc=org
+            bind_password: adminpassword
+            user_filter: "(objectClass=shadowAccount)"
+            timeout: 5
+            check_for_deleted_entries: true
+            use_attribute_filter: true
+            attributes:
+              first_name: "cn"
+              last_name: "sn"
+              preferred_username: "displayName"
+              email: "mail"
+              phone: "telephoneNumber"
+              user_id: "uid"
+              status:
+                name: "shadowFlag"
+                is_binary: false
+              disable_bitmasks: [0x2, 0x10]
+            tls:
+              client_key: ./tests/environment/certs/client.key
+              client_certificate: ./tests/environment/certs/client.crt
+              server_certificate: ./tests/environment/certs/server.crt
+              danger_disable_tls_verify: false
+              danger_use_start_tls: false
+            cache_path: ./test
+
+        feature_flags: []
+	"#};
+
+	fn load_config() -> Config {
+		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
+	}
+
+	fn new_user() -> HashMap<String, Vec<String>> {
+		HashMap::from([
+			("cn".to_owned(), vec!["Test".to_owned()]),
+			("sn".to_owned(), vec!["User".to_owned()]),
+			("displayName".to_owned(), vec!["testuser".to_owned()]),
+			("mail".to_owned(), vec!["testuser@example.com".to_owned()]),
+			("telephoneNumber".to_owned(), vec!["123456789".to_owned()]),
+			("uid".to_owned(), vec!["testuser".to_owned()]),
+			("shadowFlag".to_owned(), vec!["0".to_owned()]),
+		])
+	}
+
+	#[test]
+	fn test_attribute_filter_use() {
+		let config = load_config();
+
+		let ldap_config = config.sources.ldap.expect("Expected LDAP config");
+
+		assert_eq!(
+			Into::<ldap_poller::Config>::into(ldap_config).attributes.get_attr_filter(),
+			vec!["uid", "shadowFlag", "cn", "sn", "displayName", "mail", "telephoneNumber"]
+		);
+	}
+
+	#[test]
+	fn test_no_attribute_filters() {
+		let config = load_config();
+
+		let mut ldap_config = config.sources.ldap.as_ref().expect("Expected LDAP config").clone();
+
+		ldap_config.use_attribute_filter = false;
+
+		assert_eq!(
+			Into::<ldap_poller::Config>::into(ldap_config).attributes.get_attr_filter(),
+			vec!["*"]
+		);
+	}
+
+	#[tokio::test]
+	async fn test_get_user_changes_new_and_changed() {
+		let (tx, rx) = mpsc::channel(32);
+		let config = load_config();
+		let ldap_source =
+			LdapSource { ldap_config: config.sources.ldap.unwrap(), is_dry_run: false };
+
+		let mut user = new_user();
+
+		// Simulate new user entry
+		tx.send(EntryStatus::New(SearchEntry {
+			dn: "uid=testuser,ou=testorg,dc=example,dc=org".to_owned(),
+			attrs: user.clone(),
+			bin_attrs: HashMap::new(),
+		}))
+		.await
+		.unwrap();
+
+		// Modify user attributes to simulate a change
+		user.insert("mail".to_owned(), vec!["newemail@example.com".to_owned()]);
+		user.insert("telephoneNumber".to_owned(), vec!["987654321".to_owned()]);
+
+		// Simulate changed user entry
+		tx.send(EntryStatus::Changed {
+			old: SearchEntry {
+				dn: "uid=testuser,ou=testorg,dc=example,dc=org".to_owned(),
+				attrs: new_user(),
+				bin_attrs: HashMap::new(),
+			},
+			new: SearchEntry {
+				dn: "uid=testuser,ou=testorg,dc=example,dc=org".to_owned(),
+				attrs: user.clone(),
+				bin_attrs: HashMap::new(),
+			},
+		})
+		.await
+		.unwrap();
+
+		// Close the sender side of the channel
+		drop(tx);
+
+		let result = ldap_source.get_user_changes(rx).await;
+
+		assert!(result.is_ok(), "Failed to get user changes: {:?}", result);
+		let (added, changed, removed) = result.unwrap();
+		assert_eq!(added.len(), 1, "Unexpected number of added users");
+		assert_eq!(changed.len(), 1, "Unexpected number of changed users");
+		assert_eq!(removed.len(), 0, "Unexpected number of removed users");
+
+		// Verify the changes
+		let changed_user_entry = &changed[0].1;
+		assert_eq!(
+			changed_user_entry.email,
+			StringOrBytes::String("newemail@example.com".to_owned())
+		);
+		assert_eq!(changed_user_entry.phone, Some(StringOrBytes::String("987654321".to_owned())));
+	}
+
+	#[tokio::test]
+	async fn test_get_user_changes_removed() {
+		let (tx, rx) = mpsc::channel(32);
+		let config = load_config();
+		let ldap_source =
+			LdapSource { ldap_config: config.sources.ldap.unwrap(), is_dry_run: false };
+
+		let user = new_user();
+
+		// Simulate new user entry
+		tx.send(EntryStatus::New(SearchEntry {
+			dn: "uid=testuser,ou=testorg,dc=example,dc=org".to_owned(),
+			attrs: user.clone(),
+			bin_attrs: HashMap::new(),
+		}))
+		.await
+		.unwrap();
+
+		// Simulate removed user entry
+		tx.send(EntryStatus::Removed("uid=testuser".as_bytes().to_vec())).await.unwrap();
+
+		// Close the sender side of the channel
+		drop(tx);
+
+		let result = ldap_source.get_user_changes(rx).await;
+
+		assert!(result.is_ok(), "Failed to get user changes: {:?}", result);
+		let (added, changed, removed) = result.unwrap();
+		assert_eq!(added.len(), 1, "Unexpected number of added users");
+		assert_eq!(changed.len(), 0, "Unexpected number of changed users");
+		assert_eq!(removed.len(), 1, "Unexpected number of removed users");
+	}
+
+	#[tokio::test]
+	async fn test_parse_user() {
+		let config = load_config();
+		let ldap_source =
+			LdapSource { ldap_config: config.sources.ldap.unwrap(), is_dry_run: false };
+
+		let entry = SearchEntry {
+			dn: "uid=testuser,ou=testorg,dc=example,dc=org".to_owned(),
+			attrs: new_user(),
+			bin_attrs: HashMap::new(),
+		};
+
+		let result = ldap_source.parse_user(entry);
+		assert!(result.is_ok(), "Failed to parse user: {:?}", result);
+		let user = result.unwrap();
+		assert_eq!(user.first_name, StringOrBytes::String("Test".to_owned()));
+		assert_eq!(user.last_name, StringOrBytes::String("User".to_owned()));
+		assert_eq!(user.preferred_username, StringOrBytes::String("testuser".to_owned()));
+		assert_eq!(user.email, StringOrBytes::String("testuser@example.com".to_owned()));
+		assert_eq!(user.phone, Some(StringOrBytes::String("123456789".to_owned())));
+		assert_eq!(user.preferred_username, StringOrBytes::String("testuser".to_owned()));
+		assert_eq!(user.ldap_id, StringOrBytes::String("testuser".to_owned()));
+		assert!(user.enabled);
+	}
 }

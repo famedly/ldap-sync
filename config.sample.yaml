@@ -1,91 +1,5 @@
-source_csv:
-  # Path to the CSV file to sync from.
-  file_path: ./test_users.csv
-
-source_ukt:
-  # Endpoint URL to fetch the list of users from.
-  endpoint_url: https://list.example.invalid/usersync4chat/maillist
-  # OAuth2 URL to fetch the token from.
-  oauth2_url: https://list.example.invalid/token
-  # Client ID
-  client_id: mock_client_id
-  # Client Secret
-  client_secret: mock_client_secret
-  # Scope of what to fetch
-  scope: "openid read-maillist"
-  # Grant type
-  grant_type: client_credentials
-  
-source_ldap:
-  # The URl of the ldap server to be synced.
-  # Using `ldaps` as the scheme will enable TLS.
-  url: ldap://ldap.example.invalid
-  # The base DN whose users to sync.
-  base_dn: ou=testorg,dc=example,dc=org
-  # The DN to bind - this should be a user with sufficient permissions
-  # to read the above DN.
-  bind_dn: cn=admin,dc=example,dc=org
-  # The password of the bound user.
-  bind_password: adminpassword
-  # The LDAP filter to identify user entries.
-  user_filter: "(objectClass=shadowAccount)"
-  # The LDAP connection timeout
-  timeout: 5
-  # Whether to sync entry deletion.
-  check_for_deleted_entries: true
-  # Whether to filter for the specific attributes used. Some LDAP
-  # implementations misbehave if this is not done, others misbehave if
-  # it is done.
-  #
-  # Default is false.
-  use_attribute_filter: true
-  # A mapping of the LDAP attributes to Famedly attributes. This is
-  # different for different LDAP server implementations and
-  # organizations, so needs to be configured on a case-by-case basis.
-  #
-  # This sample configuration is for a reasonably standard OpenLDAP
-  # implementation.
-  attributes:
-    first_name: "cn"
-    last_name: "sn"
-    preferred_username: "displayName"
-    email: "mail"
-    user_id:
-      name: "uid"
-      # Some LDAP attributes are binary values; These should be marked
-      # explicitly. Most of the time it will work either way, but if
-      # this is not set any non-UTF8 values will fail to sync.
-      is_binary: true
-    # Status flag for the user. This is read as a big-endian integer. Normally userAccountControl in AD.
-    status: "shadowFlag"
-    # Vector of bitmasks that marks the user as disabled. Tested on status.
-    # (for example ACCOUNTDISABLE=0x2 and LOCKOUT=0x10 in AD)
-    # Decimal (or hex) representation of the specific flag mask
-    disable_bitmasks: [0x2, 0x10]
-    # Phone numbers are the only optional attribute, if a user does
-    # not have a phone number this will be silently ignored
-    phone: "telephoneNumber"
-
-  # TLS config is optional, and only needs to be set if TLS is needed
-  tls:
-    # The client TLS key/certificate. If both this and the certificate
-    # are unset, the client will not send any certificates.
-    client_key: ./tests/environment/certs/client.key
-    client_certificate: ./tests/environment/certs/client.crt
-    # Path to the LDAP server's root certificate. If unset, only the
-    # host's default certificates will be used to verify the server.
-    server_certificate: ./tests/environment/certs/server.crt
-    # Disable root certificate verification - should only be used in
-    # testing.
-    danger_disable_tls_verify: false
-    # Whether to use STARTTLS to start the TLS connection - this is not
-    # needed with the `ldaps` scheme, as the server will already be
-    # hosting TLS.
-    danger_use_start_tls: false
-
-# Configuration for the Famedly side of the sync - this has to be
-# provided by Famedly
-zitadel_config:
+# Configuration for Famedly's Zitadel - has to be provided by Famedly
+zitadel:
   # The Famedly user endpoint to sync to.
   url: https://auth.famedly.de
   # The Famedly-provided service user credentials.
@@ -98,12 +12,98 @@ zitadel_config:
   idp_id: 281430143275106308
 
 feature_flags:
-  - verify_email    # Whether to ask users to verify their email addresses post sync
-  - verify_phone    # Whether to ask users to verify their phone numbers post sync
-  # - sso_login     # Whether to enable SSO login - Please note that his has some drawbacks and limitations, see the help center article for more information
-  # - dry_run       # Disable syncing users to Zitadel - Intended to ensure syncs are working before productive deployment
+  - verify_email      # Whether to ask users to verify their email addresses post sync
+  - verify_phone      # Whether to ask users to verify their phone numbers post sync
+  # - sso_login       # Whether to enable SSO login - Please note that his has some drawbacks and limitations, see the help center article for more information
+  # - dry_run         # Disable syncing users to Zitadel - Intended to ensure syncs are working before productive deployment
+  # - deactivate_only # Only deactivate users, do not create or update them. Keep in mind LDAP is cached and all the changes made on LDAP will be written to the cache as if they where applied. Therefore, only the deactivation changes will be applied to Zitadel but **all the other changes will be lost**.
 
-# Path to the file that keeps track of previously synced entries -
-# this file should be persisted, otherwise users may become out of
-# sync.
-cache_path: /opt/famedly-sync-agent/famedly-sync.cache
+# Configuration for the sources to sync from.
+sources:
+  # Configuration for the LDAP source. Using caching, LDAP source checks for new, updated, and deleted users in the LDAP server.
+  ldap:
+    # The URl of the ldap server to be synced.
+    # Using `ldaps` as the scheme will enable TLS.
+    url: ldap://ldap.example.invalid
+    # The base DN whose users to sync.
+    base_dn: ou=testorg,dc=example,dc=org
+    # The DN to bind - this should be a user with sufficient permissions
+    # to read the above DN.
+    bind_dn: cn=admin,dc=example,dc=org
+    # The password of the bound user.
+    bind_password: adminpassword
+    # The LDAP filter to identify user entries.
+    user_filter: "(objectClass=shadowAccount)"
+    # The LDAP connection timeout
+    timeout: 5
+    # Whether to sync entry deletion.
+    check_for_deleted_entries: true
+    # Whether to filter for the specific attributes used. Some LDAP
+    # implementations misbehave if this is not done, others misbehave if
+    # it is done.
+    #
+    # Default is false.
+    use_attribute_filter: true
+    # A mapping of the LDAP attributes to Famedly attributes. This is
+    # different for different LDAP server implementations and
+    # organizations, so needs to be configured on a case-by-case basis.
+    #
+    # This sample configuration is for a reasonably standard OpenLDAP
+    # implementation.
+    attributes:
+      first_name: "cn"
+      last_name: "sn"
+      preferred_username: "displayName"
+      email: "mail"
+      user_id:
+        name: "uid"
+        # Some LDAP attributes are binary values; These should be marked
+        # explicitly. Most of the time it will work either way, but if
+        # this is not set any non-UTF8 values will fail to sync.
+        is_binary: true
+      # Status flag for the user. This is read as a big-endian integer. Normally userAccountControl in AD.
+      status: "shadowFlag"
+      # Vector of bitmasks that marks the user as disabled. Tested on status.
+      # (for example ACCOUNTDISABLE=0x2 and LOCKOUT=0x10 in AD)
+      # Decimal (or hex) representation of the specific flag mask
+      disable_bitmasks: [0x2, 0x10]
+      # Phone numbers are the only optional attribute, if a user does
+      # not have a phone number this will be silently ignored
+      phone: "telephoneNumber"
+
+    # TLS config is optional, and only needs to be set if TLS is needed
+    tls:
+      # The client TLS key/certificate. If both this and the certificate
+      # are unset, the client will not send any certificates.
+      client_key: ./tests/environment/certs/client.key
+      client_certificate: ./tests/environment/certs/client.crt
+      # Path to the LDAP server's root certificate. If unset, only the
+      # host's default certificates will be used to verify the server.
+      server_certificate: ./tests/environment/certs/server.crt
+      # Disable root certificate verification - should only be used in
+      # testing.
+      danger_disable_tls_verify: false
+      # Whether to use STARTTLS to start the TLS connection - this is not
+      # needed with the `ldaps` scheme, as the server will already be
+      # hosting TLS.
+      danger_use_start_tls: false
+
+    # Path to the file that keeps track of previously synced LDAP entries.
+    # This file should be persisted, otherwise users may become out of sync.
+    cache_path: /opt/famedly-sync-agent/famedly-sync.cache
+
+  # Configuration for the UKT source - a custom endpoint provided by UKT,
+  # which gives a list of emails of users that should be deleted from Zitadel.
+  ukt:
+    # Endpoint URL to fetch the list of users from.
+    endpoint_url: https://list.example.invalid/usersync4chat/maillist
+    # OAuth2 URL to fetch the token from.
+    oauth2_url: https://list.example.invalid/token
+    # Client ID
+    client_id: mock_client_id
+    # Client Secret
+    client_secret: mock_client_secret
+    # Scope of what to fetch
+    scope: "openid read-maillist"
+    # Grant type
+    grant_type: client_credentials

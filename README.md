@@ -1,81 +1,38 @@
-# LDAP-sync
+# Famedly Sync
 
-Sync LDAP/AD users with Zitadel.
+This tool synchronizes users from different sources to Famedly's Zitadel instance.
 
-## Usage
+Currently supported sources:
+- LDAP
+- Custom endpoint provided by UKT
 
-The easiest way to deploy this tool is using our published docker
-container through our [composefile](./docker-compose.yaml).
+## Configuration
 
-To prepare for use, we need to provide a handful of files in an `opt`
-directory in the directory where `docker compose` will be
-executed. This is the expected directory structure of the sample
-configuration file:
+The tool expects a configuration file located at `./config.yaml`. See example configuration at [config.sample.yaml](./config.sample.yaml).
 
-```
-opt
-├── certs
-│  └── test-ldap.crt   # The TLS certificate of the LDAP server
-├── config.yaml        # An example can be found in config.sample.yaml
-└── service-user.json  # Provided by famedly
-```
+The default path can be changed by setting the new path to the environment variable `FAMEDLY_LDAP_SYNC_CONFIG`.
 
-Once this is in place, the container can be executed in the parent
-directory of `opt` with:
+Also, individual configuration items and the whole configuration can be set using environment variables. For example, the following YAML configuration:
 
-```
-docker compose up
-```
-
-Or alternatively, without `docker compose`:
-
-```
-docker run --rm -it --network host --volume ./opt:/opt/famedly-sync-agent docker-oss.nexus.famedly.de/famedly-sync-agent:latest
-```
-
-### Deactivate only feature
-
-When this feature is set the ldap-sync will only synchronize the deactivated user. All the changes made on the ldap will be written to the cache as if they where applied. Therefore, only the deactivation changes will be applied to Zitadel but **all the other changes will be lost**
-
-### Configuration
-
-The ldap-sync expects a configuration file located at `./config.yaml`. The default path can be changed setting the new path to the environment variable `FAMEDLY_LDAP_SYNC_CONFIG`.
-
-Also, individual configuration items and the whole configuration can be set using environment variables. For example, the following configuration could be set like this:
-
-Configuration yaml
 ```yaml
-ldap:
-  url: ldap://localhost:1389
+sources:
+  ldap:
+    url: ldap://localhost:1389
 ```
+
+Could be set using the following environment variable:
 
 ```bash
-FAMEDLY_LDAP_SYNC__LDAP__URL="ldap://localhost:1389"
+FAMEDLY_LDAP_SYNC__SOURCES__LDAP__URL="ldap://localhost:1389"
 ```
 
 Note that the environment variable name always starts with the prefix `FAMEDLY_LDAP_SYNC` followed by keys separated by double underscores (`__`).
 
 Some configuration items take a list of values. In this cases the values should be separated by space. **If an empty list is desired the variable shouldn't be created.**
 
-## Quirks & Edge Cases
+Config can have **various sources** to sync from. When a source is configured, the sync tool tries to update users in Famedly's Zitadel instance based on the data obtained from the source.
 
-- Changing a user's LDAP id (the attribute from the `user_id` setting)
-  is unsupported, as this is used to identify the user on the Zitadel
-  end.
-- Disabling a user on the LDAP side (with `status`) results in the
-  user being deleted from Zitadel.
-- Providing multiple values for an LDAP attribute is not supported.
-- Zitadel's API is not fully atomic; if a request fails, a user may
-  not be fully created and still not be functional even if the tool is
-  re-used.
-  - In particular, the matrix localpart, the preferred user name, and
-    whether the user has permissions to use Famedly may not be synced.
-- If a user's email or phone number changes, they will only be
-  prompted to verify it if the tool is configured to make users verify
-  them.
-- Changing a user's email also immediately results in a new
-  login/username.
-- If SSO is turned on later, existing users will not be linked.
+**Feature flags** are optional and can be used to enable or disable certain features.
 
 ## Testing & Development
 
@@ -127,11 +84,64 @@ client certificates, but if one is provided, it must be verified
 correctly. This allows us to test scenarios with and without client
 certificates.
 
+## Contributing
+
 ### Pre-commit usage
 
 1. If not installed, install with your package manager, or `pip install --user pre-commit`
 2. Run `pre-commit autoupdate` to update the pre-commit config to use the newest template
 3. Run `pre-commit install` to install the pre-commit hooks to your local environment
+
+## Deployment
+
+The easiest way to deploy this tool is using our published docker
+container through our [composefile](./docker-compose.yaml).
+
+To prepare for use, we need to provide a handful of files in an `opt`
+directory in the directory where `docker compose` will be
+executed. This is the expected directory structure of the sample
+configuration file:
+
+```
+opt
+├── certs
+│  └── test-ldap.crt   # The TLS certificate of the LDAP server
+├── config.yaml        # An example can be found in config.sample.yaml
+└── service-user.json  # Provided by famedly
+```
+
+Once this is in place, the container can be executed in the parent
+directory of `opt` with:
+
+```
+docker compose up
+```
+
+Or alternatively, without `docker compose`:
+
+```
+docker run --rm -it --network host --volume ./opt:/opt/famedly-sync-agent docker-oss.nexus.famedly.de/famedly-sync-agent:latest
+```
+
+## Quirks & Edge Cases
+
+- Changing a user's LDAP id (the attribute from the `user_id` setting)
+  is unsupported, as this is used to identify the user on the Zitadel
+  end.
+- Disabling a user on the LDAP side (with `status`) results in the
+  user being deleted from Zitadel.
+- Providing multiple values for an LDAP attribute is not supported.
+- Zitadel's API is not fully atomic; if a request fails, a user may
+  not be fully created and still not be functional even if the tool is
+  re-used.
+  - In particular, the matrix localpart, the preferred user name, and
+    whether the user has permissions to use Famedly may not be synced.
+- If a user's email or phone number changes, they will only be
+  prompted to verify it if the tool is configured to make users verify
+  them.
+- Changing a user's email also immediately results in a new
+  login/username.
+- If SSO is turned on later, existing users will not be linked.
 
 ---
 

@@ -1,16 +1,21 @@
 //! All sync client configuration structs and logic
 use std::{
 	ops::{Deref, DerefMut},
-	path::{Path, PathBuf},
+	path::Path,
 };
 
 use anyhow::{bail, Result};
 use serde::Deserialize;
+use tracing::{error, warn};
 use url::Url;
 
 use crate::{
-	sources::{csv::SourceCsvConfig, ldap::SourceLdapConfig, ukt::SourceUktConfig},
-	zitadel::ZitadelConfig,
+	sources::{
+		ldap::{LdapSource, LdapSourceConfig},
+		ukt::{UktSource, UktSourceConfig},
+		Source,
+	},
+	zitadel::{Zitadel, ZitadelConfig},
 };
 
 /// App prefix for env var configuration
@@ -18,26 +23,27 @@ const ENV_VAR_CONFIG_PREFIX: &str = "FAMEDLY_LDAP_SYNC";
 /// Separator for setting a list using env vars
 const ENV_VAR_LIST_SEP: &str = " ";
 
-/// Configuration for the sync client
+/// The main sync tool with all configurations
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct Config {
 	/// Configuration related to Zitadel provided by Famedly
-	// ! Renamed from famedly to zitadel_config (needs update to the env vars)
-	pub zitadel_config: ZitadelConfig,
-	/// Optional LDAP configuration
-	// ! Renamed from ldap to source_ldap (needs update to the env vars)
-	pub source_ldap: Option<SourceLdapConfig>,
-	/// Optional Disable List configuration
-	pub source_ukt: Option<SourceUktConfig>,
-	/// Optional CSV configuration
-	pub source_csv: Option<SourceCsvConfig>,
+	pub zitadel: ZitadelConfig,
+	/// Sources configuration
+	pub sources: SourcesConfig,
 	/// Optional sync tool log level
 	pub log_level: Option<String>,
 	/// Opt-in features
 	#[serde(default)]
 	pub feature_flags: FeatureFlags,
-	/// General cache path
-	pub cache_path: PathBuf,
+}
+
+/// Configuration for sources
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct SourcesConfig {
+	/// Optional LDAP configuration
+	pub ldap: Option<LdapSourceConfig>,
+	/// Optional UKT configuration
+	pub ukt: Option<UktSourceConfig>,
 }
 
 impl Config {
@@ -49,7 +55,7 @@ impl Config {
 				config::Environment::with_prefix(ENV_VAR_CONFIG_PREFIX)
 					.separator("__")
 					.list_separator(ENV_VAR_LIST_SEP)
-					.with_list_parse_key("source_ldap.attributes.disable_bitmasks")
+					.with_list_parse_key("sources.ldap.attributes.disable_bitmasks")
 					.with_list_parse_key("feature_flags")
 					.try_parsing(true),
 			);
@@ -63,9 +69,60 @@ impl Config {
 
 	/// Validate the config and return a valid configuration
 	fn validate(mut self) -> Result<Self> {
-		self.zitadel_config.url = validate_zitadel_url(self.zitadel_config.url)?;
+		self.zitadel.url = validate_zitadel_url(self.zitadel.url)?;
 
 		Ok(self)
+	}
+
+	/// Perform a sync operation
+	pub async fn perform_sync(&self) -> Result<()> {
+		if !self.feature_flags.is_enabled(FeatureFlag::SsoLogin) {
+			anyhow::bail!("Non-SSO configuration is currently not supported");
+		}
+
+		let mut sources: Vec<Box<dyn Source + Send + Sync>> = Vec::new();
+
+		if let Some(ldap_config) = &self.sources.ldap {
+			let ldap = LdapSource::new(
+				ldap_config.clone(),
+				self.feature_flags.is_enabled(FeatureFlag::DryRun),
+			);
+			sources.push(Box::new(ldap));
+		}
+
+		if let Some(ukt_config) = &self.sources.ukt {
+			let ukt = UktSource::new(ukt_config.clone());
+			sources.push(Box::new(ukt));
+		}
+
+		// Setup Zitadel client
+		let zitadel = Zitadel::new(self).await?;
+
+		// Sync from each available source
+		for source in sources.iter() {
+			let diff = match source.get_diff().await {
+				Ok(diff) => diff,
+				Err(e) => {
+					error!("Failed to get diff from {}: {:?}", source.get_name(), e);
+					continue;
+				}
+			};
+
+			if !self.feature_flags.is_enabled(FeatureFlag::DeactivateOnly) {
+				if let Err(e) = zitadel.import_new_users(diff.new_users).await {
+					warn!("Failed to import new users from {}: {:?}", source.get_name(), e);
+				}
+				if let Err(e) = zitadel.delete_users_by_id(diff.deleted_user_ids).await {
+					warn!("Failed to delete users from {}: {:?}", source.get_name(), e);
+				}
+			}
+
+			if let Err(e) = zitadel.update_users(diff.changed_users).await {
+				warn!("Failed to update users from {}: {:?}", source.get_name(), e);
+			}
+		}
+
+		Ok(())
 	}
 }
 
@@ -126,7 +183,7 @@ fn validate_zitadel_url(url: Url) -> Result<Url> {
 #[cfg(test)]
 mod tests {
 	#![allow(clippy::expect_used, clippy::unwrap_used)]
-	use std::{env, fs::File, io::Write};
+	use std::{env, fs::File, io::Write, path::PathBuf};
 
 	use indoc::indoc;
 	use tempfile::TempDir;
@@ -134,59 +191,21 @@ mod tests {
 	use super::*;
 
 	const EXAMPLE_CONFIG: &str = indoc! {r#"
-        source_ukt:
-          endpoint_url: https://list.example.invalid/usersync4chat/maillist
-          oauth2_url: https://list.example.invalid/token
-          client_id: mock_client_id
-          client_secret: mock_client_secret
-          scope: "openid read-maillist"
-          grant_type: client_credentials
-
-        source_ldap:
-          url: ldap://localhost:1389
-          base_dn: ou=testorg,dc=example,dc=org
-          bind_dn: cn=admin,dc=example,dc=org
-          bind_password: adminpassword
-          user_filter: "(objectClass=shadowAccount)"
-          timeout: 5
-          check_for_deleted_entries: true
-          use_attribute_filter: true
-          attributes:
-            first_name: "cn"
-            last_name: "sn"
-            preferred_username: "displayName"
-            email: "mail"
-            phone: "telephoneNumber"
-            user_id: "uid"
-            status:
-              name: "shadowFlag"
-              is_binary: false
-            disable_bitmasks: [0x2, 0x10]
-          tls:
-            client_key: ./tests/environment/certs/client.key
-            client_certificate: ./tests/environment/certs/client.crt
-            server_certificate: ./tests/environment/certs/server.crt
-            danger_disable_tls_verify: false
-            danger_use_start_tls: false
-
-        zitadel_config:
+        zitadel:
           url: http://localhost:8080
           key_file: tests/environment/zitadel/service-user.json
           organization_id: 1
           project_id: 1
           idp_id: 1
+        
+        sources:
+          test: 1
 
         feature_flags: []
-        cache_path: ./test
 	"#};
 
 	fn load_config() -> Config {
 		serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config")
-	}
-
-	fn example_ldap_config() -> SourceLdapConfig {
-		let config: Config = serde_yaml::from_str(EXAMPLE_CONFIG).expect("invalid config");
-		config.source_ldap.expect("Expected LDAP config")
 	}
 
 	fn example_env_vars() -> Vec<(String, String)> {
@@ -271,27 +290,6 @@ mod tests {
 		assert!(validate_zitadel_url(url).is_err());
 	}
 
-	#[test]
-	fn test_attribute_filter_use() {
-		let ldap_config = example_ldap_config();
-
-		assert_eq!(
-			Into::<ldap_poller::Config>::into(ldap_config).attributes.get_attr_filter(),
-			vec!["uid", "shadowFlag", "cn", "sn", "displayName", "mail", "telephoneNumber"]
-		);
-	}
-
-	#[test]
-	fn test_no_attribute_filters() {
-		let mut ldap_config = example_ldap_config();
-		ldap_config.use_attribute_filter = false;
-
-		assert_eq!(
-			Into::<ldap_poller::Config>::into(ldap_config).attributes.get_attr_filter(),
-			vec!["*"]
-		);
-	}
-
 	#[tokio::test]
 	async fn test_sample_config() {
 		let config = Config::new(Path::new("./config.sample.yaml"));
@@ -313,19 +311,15 @@ mod tests {
 		let tempdir = TempDir::new().expect("failed to initialize cache dir");
 		let file_path = create_config_file(tempdir.path());
 
-		let env_var_name = format!("{ENV_VAR_CONFIG_PREFIX}__SOURCE_LDAP__TIMEOUT");
-		env::set_var(&env_var_name, "1");
+		let env_var_name = format!("{ENV_VAR_CONFIG_PREFIX}__FEATURE_FLAGS");
+		env::set_var(&env_var_name, "dry_run");
 
 		let loaded_config =
 			Config::new(file_path.as_path()).expect("Failed to create config object");
 		env::remove_var(env_var_name);
 
 		let mut sample_config = load_config();
-		sample_config
-			.source_ldap
-			.as_mut()
-			.map(|ldap_config| ldap_config.timeout = 1)
-			.expect("LDAP configuration is missing");
+		sample_config.feature_flags.push(FeatureFlag::DryRun);
 
 		assert_eq!(sample_config, loaded_config);
 	}
