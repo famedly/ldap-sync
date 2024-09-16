@@ -47,16 +47,46 @@ impl Zitadel {
 			zitadel_client,
 		})
 	}
+
 	/// Import a list of new users into Zitadel
 	pub(crate) async fn import_new_users(&self, users: Vec<User>) -> Result<()> {
 		for user in users {
 			let zitadel_user =
 				user.to_zitadel_user(&self.feature_flags, &self.zitadel_config.idp_id);
-			let sync_status = self.import_user(&zitadel_user).await;
+			let status = self.import_user(&zitadel_user).await;
 
-			if let Err(error) = sync_status {
-				tracing::error!("Failed to sync user `{}`: {:?}", zitadel_user.log_name(), error);
-			};
+			if let Err(error) = status {
+				tracing::error!(
+					"Failed to sync-import user `{}`: {:?}",
+					zitadel_user.log_name(),
+					error
+				);
+
+				if Self::is_invalid_phone_error(error) {
+					let zitadel_user = ZidatelUser {
+						user_data: User { phone: None, ..zitadel_user.user_data },
+						..zitadel_user
+					};
+
+					let retry_status = self.import_user(&zitadel_user).await;
+
+					match retry_status {
+						Ok(_) => {
+							tracing::info!(
+								"Retry sync-import succeeded for user `{}`",
+								zitadel_user.log_name()
+							);
+						}
+						Err(retry_error) => {
+							tracing::error!(
+								"Retry sync-import failed for user `{}`: {:?}",
+								zitadel_user.log_name(),
+								retry_error
+							);
+						}
+					}
+				}
+			}
 		}
 
 		Ok(())
@@ -144,7 +174,30 @@ impl Zitadel {
 				let status = self.update_user(&old, &new).await;
 
 				if let Err(error) = status {
-					tracing::error!("Failed to update user `{}`: {:?}", new.log_name(), error);
+					tracing::error!("Failed to sync-update user `{}`: {:?}", new.log_name(), error);
+
+					if Self::is_invalid_phone_error(error) {
+						let new =
+							ZidatelUser { user_data: User { phone: None, ..new.user_data }, ..new };
+
+						let retry_status = self.update_user(&old, &new).await;
+
+						match retry_status {
+							Ok(_) => {
+								tracing::info!(
+									"Retry sync-update succeeded for user `{}`",
+									new.log_name()
+								);
+							}
+							Err(retry_error) => {
+								tracing::error!(
+									"Retry sync-update failed for user `{}`: {:?}",
+									new.log_name(),
+									retry_error
+								);
+							}
+						}
+					}
 				}
 			}
 		}
@@ -397,6 +450,25 @@ impl Zitadel {
 		tracing::info!("Successfully imported user {:?}", user);
 
 		Ok(())
+	}
+
+	/// Check if an error is an invalid phone error
+	fn is_invalid_phone_error(error: anyhow::Error) -> bool {
+		/// Part of the error message returned by Zitadel
+		/// when a phone number is invalid for a new user
+		const INVALID_PHONE_IMPORT_ERROR: &str = "invalid ImportHumanUserRequest_Phone";
+
+		/// Part of the error message returned by Zitadel
+		/// when a phone number is invalid for an existing user being updated
+		const INVALID_PHONE_UPDATE_ERROR: &str = "invalid UpdateHumanPhoneRequest";
+
+		if let Ok(ZitadelError::TonicResponseError(ref error)) = error.downcast::<ZitadelError>() {
+			return error.code() == TonicErrorCode::InvalidArgument
+				&& (error.message().contains(INVALID_PHONE_IMPORT_ERROR)
+					|| error.message().contains(INVALID_PHONE_UPDATE_ERROR));
+		}
+
+		false
 	}
 }
 

@@ -401,6 +401,84 @@ async fn test_e2e_no_phone() {
 
 #[test(tokio::test)]
 #[test_log(default_log_filter = "debug")]
+async fn test_e2e_sync_invalid_phone() {
+	let mut ldap = Ldap::new().await;
+	ldap.create_user(
+		"John",
+		"Good Phone",
+		"Johnny1",
+		"good_gone_bad_phone@famedly.de",
+		Some("+12015550123"),
+		"good_gone_bad_phone",
+		false,
+	)
+	.await;
+
+	ldap.create_user(
+		"John",
+		"Bad Phone",
+		"Johnny2",
+		"bad_phone_all_along@famedly.de",
+		Some("abc"),
+		"bad_phone_all_along",
+		false,
+	)
+	.await;
+
+	let config = config().await;
+	config.perform_sync().await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+
+	let user = zitadel
+		.get_user_by_login_name("good_gone_bad_phone@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+	assert!(user.is_some());
+	let user = user.expect("could not find user");
+	match user.r#type {
+		Some(UserType::Human(user)) => {
+			assert_eq!(
+				user.phone.expect("phone field should always be present").phone,
+				"+12015550123"
+			);
+		}
+		_ => panic!("user lacks details"),
+	}
+	let user = zitadel
+		.get_user_by_login_name("bad_phone_all_along@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+	assert!(user.is_some());
+	let user = user.expect("could not find user");
+	match user.r#type {
+		Some(UserType::Human(user)) => {
+			assert_eq!(user.phone.expect("phone field should always be present").phone, "");
+		}
+		_ => panic!("user lacks details"),
+	}
+
+	ldap.change_user("good_gone_bad_phone", vec![("telephoneNumber", HashSet::from(["abc"]))])
+		.await;
+
+	config.perform_sync().await.expect("syncing failed");
+
+	let user = zitadel
+		.get_user_by_login_name("good_gone_bad_phone@famedly.de")
+		.await
+		.expect("could not query Zitadel users");
+	assert!(user.is_some());
+	let user = user.expect("could not find user");
+	match user.r#type {
+		Some(UserType::Human(user)) => {
+			assert_eq!(user.phone.expect("phone field should always be present").phone, "");
+		}
+		_ => panic!("user lacks details"),
+	}
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
 async fn test_e2e_binary_attr() {
 	let mut config = config().await.clone();
 
