@@ -488,13 +488,13 @@ pub struct ZitadelConfig {
 
 /// The different ways to identify a user in Zitadel
 #[derive(Debug)]
-#[allow(dead_code)]
 pub enum UserId {
 	/// The login name is actually the email address
 	Login(String),
 	/// The nick name is actually the LDAP ID
 	Nick(String),
 	/// The Zitadel ID
+	#[allow(dead_code)]
 	ZitadelId(String),
 }
 
