@@ -182,7 +182,6 @@ fn validate_zitadel_url(url: Url) -> Result<Url> {
 // RUST_TEST_THREADS=1 cargo test --lib
 #[cfg(test)]
 mod tests {
-	#![allow(clippy::expect_used, clippy::unwrap_used)]
 	use std::{env, fs::File, io::Write, path::PathBuf};
 
 	use indoc::indoc;

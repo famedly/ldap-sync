@@ -1,4 +1,4 @@
-#![allow(clippy::expect_used)]
+#![cfg(test)]
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
