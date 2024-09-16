@@ -206,7 +206,6 @@ impl Zitadel {
 	}
 
 	/// Update a Zitadel user
-	#[allow(clippy::unused_async, unused_variables)]
 	async fn update_user(&self, old: &ZitadelUser, new: &ZitadelUser) -> Result<()> {
 		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not updating user due to dry run: {:?} -> {:?}", old, new);
