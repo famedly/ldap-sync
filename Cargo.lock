@@ -1430,6 +1430,7 @@ dependencies = [
  "bincode",
  "chrono",
  "config",
+ "http 1.1.0",
  "indoc",
  "itertools 0.13.0",
  "ldap-poller",

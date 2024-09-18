@@ -7,9 +7,12 @@ publish = false
 
 [dependencies]
 anyhow = { version = "1.0.81", features = ["backtrace"] }
+async-trait = "0.1.82"
 base64 = "0.22.1"
 bincode = "1.3.3"
+chrono = "0.4.19"
 config = { version = "0.14.0" }
+http = "1.1.0"
 itertools = "0.13.0"
 # error-stack = "0.4.1"
 ldap-poller = { git = "https://github.com/famedly/ldap-poller", version = "0.1.0" }
@@ -22,8 +25,6 @@ tracing-subscriber = "0.3.18"
 url = "2.5.2"
 uuid = { version = "1.10.0", features = ["v5"] }
 zitadel-rust-client = { git = "https://github.com/famedly/zitadel-rust-client", version = "0.1.0" }
-chrono = "0.4.19"
-async-trait = "0.1.82"
 wiremock = "0.6.2"
 
 [dependencies.tonic]
@@ -36,6 +37,13 @@ features = ["rustls-tls-native-roots", "json"]
 
 [build-dependencies]
 vergen = { version = "8.2.6", features = ["git", "gitcl", "build"] } # vergen passes metadata like the version and git commit hash to cargo as a compile-time environment variables
+
+[dev-dependencies]
+indoc = "2.0.5"
+ldap3 = { version = "0.11.1", default-features = false, features = ["tls-native"] }
+serde_yaml = "0.9.34"
+tempfile = "3.10.1"
+test-log = { version = "0.2.16", features = ["trace", "unstable"] }
 
 [lints.rust]
 dead_code = "warn"
@@ -127,9 +135,3 @@ used_underscore_binding = "warn"
 useless_let_if_seq = "warn"
 verbose_file_reads = "warn"
 
-[dev-dependencies]
-indoc = "2.0.5"
-ldap3 = { version = "0.11.1", default-features = false, features = ["tls-native"] }
-tempfile = "3.10.1"
-test-log = { version = "0.2.16", features = ["trace", "unstable"] }
-serde_yaml = "0.9.34"

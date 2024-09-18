@@ -134,7 +134,7 @@ pub struct UktSourceConfig {
 /// Helper module for unit and e2e tests
 pub mod test_helpers {
 
-	use reqwest::StatusCode;
+	use http::StatusCode;
 	use url::Url;
 	use wiremock::{
 		matchers::{body_string_contains, header, method, path, query_param},
