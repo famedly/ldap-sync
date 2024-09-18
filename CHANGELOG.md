@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2024-09-18
+
+### Features
+
+- Add UKT Source support
+- Add CSV Source support
+- [**breaking**] Adjust config struct for multi-source trait
+  - The configuration format has changed to accommodate multiple sources. Please
+    consult the sample configuration file.
+- Retry creating, updating User with an invalid phone number
+
+### Bug Fixes
+
+- Enable the native-tls feature for tonic/reqwest
+
+### Refactor
+
+- Use Source Trait
+- Fix typos
+
 ## [0.3.0] - 2024-09-03
 
 ### Bug Fixes
