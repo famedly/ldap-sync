@@ -12,7 +12,7 @@ use zitadel_rust_client::{
 
 use crate::{
 	config::{Config, FeatureFlags},
-	user::{StringOrBytes, User, ZidatelUser},
+	user::{StringOrBytes, User, ZitadelUser},
 	FeatureFlag,
 };
 
@@ -63,7 +63,7 @@ impl Zitadel {
 				);
 
 				if Self::is_invalid_phone_error(error) {
-					let zitadel_user = ZidatelUser {
+					let zitadel_user = ZitadelUser {
 						user_data: User { phone: None, ..zitadel_user.user_data },
 						..zitadel_user
 					};
@@ -122,7 +122,7 @@ impl Zitadel {
 
 	/// Update a list of old/new user maps
 	pub(crate) async fn update_users(&self, users: Vec<ChangedUser>) -> Result<()> {
-		let disabled: Vec<ZidatelUser> = users
+		let disabled: Vec<ZitadelUser> = users
 			.iter()
 			.filter(|user| user.old.enabled && !user.new.enabled)
 			.map(|user| {
@@ -130,7 +130,7 @@ impl Zitadel {
 			})
 			.collect();
 
-		let enabled: Vec<ZidatelUser> = users
+		let enabled: Vec<ZitadelUser> = users
 			.iter()
 			.filter(|user| !user.old.enabled && user.new.enabled)
 			.map(|user| {
@@ -138,7 +138,7 @@ impl Zitadel {
 			})
 			.collect();
 
-		let changed: Vec<(ZidatelUser, ZidatelUser)> = users
+		let changed: Vec<(ZitadelUser, ZitadelUser)> = users
 			.into_iter()
 			.filter(|user| user.new.enabled && user.old.enabled == user.new.enabled)
 			.map(|user| {
@@ -178,7 +178,7 @@ impl Zitadel {
 
 					if Self::is_invalid_phone_error(error) {
 						let new =
-							ZidatelUser { user_data: User { phone: None, ..new.user_data }, ..new };
+							ZitadelUser { user_data: User { phone: None, ..new.user_data }, ..new };
 
 						let retry_status = self.update_user(&old, &new).await;
 
@@ -207,7 +207,7 @@ impl Zitadel {
 
 	/// Update a Zitadel user
 	#[allow(clippy::unused_async, unused_variables)]
-	async fn update_user(&self, old: &ZidatelUser, new: &ZidatelUser) -> Result<()> {
+	async fn update_user(&self, old: &ZitadelUser, new: &ZitadelUser) -> Result<()> {
 		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not updating user due to dry run: {:?} -> {:?}", old, new);
 			return Ok(());
@@ -364,7 +364,7 @@ impl Zitadel {
 
 	/// Retrieve the Zitadel user ID of a user, or None if the user
 	/// cannot be found
-	async fn get_user_id(&self, user: &ZidatelUser) -> Result<Option<String>> {
+	async fn get_user_id(&self, user: &ZitadelUser) -> Result<Option<String>> {
 		let status = self
 			.zitadel_client
 			.get_user_by_login_name(&user.user_data.email.clone().to_string())
@@ -380,7 +380,7 @@ impl Zitadel {
 	}
 
 	/// Delete a Zitadel user
-	async fn delete_user(&self, user: &ZidatelUser) -> Result<()> {
+	async fn delete_user(&self, user: &ZitadelUser) -> Result<()> {
 		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not deleting user due to dry run: {:?}", user);
 			return Ok(());
@@ -398,7 +398,7 @@ impl Zitadel {
 	}
 
 	/// Import a user into Zitadel
-	async fn import_user(&self, user: &ZidatelUser) -> Result<()> {
+	async fn import_user(&self, user: &ZitadelUser) -> Result<()> {
 		if self.feature_flags.is_enabled(FeatureFlag::DryRun) {
 			tracing::info!("Not importing user due to dry run: {:?}", user);
 			return Ok(());

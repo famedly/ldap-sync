@@ -147,7 +147,7 @@ pub mod test_helpers {
 	pub const ENDPOINT_PATH: &str = "/usersync4chat/maillist";
 
 	/// The path to the UKT OAuth2 endpoint
-	pub const OATH2_PATH: &str = "/token";
+	pub const OAUTH2_PATH: &str = "/token";
 
 	/// Get the URL of the mock server with the given path
 	pub fn get_mock_server_url(mock_server: &MockServer, path: &str) -> Result<Url> {
@@ -159,7 +159,7 @@ pub mod test_helpers {
 	/// Prepare the OAuth2 mock
 	pub async fn prepare_oauth2_mock(mock_server: &MockServer) {
 		Mock::given(method("POST"))
-			.and(path(OATH2_PATH))
+			.and(path(OAUTH2_PATH))
 			.and(body_string_contains("grant_type=client_credentials"))
 			.and(body_string_contains("scope=openid+read-maillist"))
 			.and(body_string_contains("client_id=mock_client_id"))
@@ -244,7 +244,7 @@ mod tests {
 			.as_mut()
 			.map(|ukt| {
 				ukt.oauth2_url =
-					test_helpers::get_mock_server_url(&mock_server, test_helpers::OATH2_PATH)
+					test_helpers::get_mock_server_url(&mock_server, test_helpers::OAUTH2_PATH)
 						.expect("Failed to get mock server URL");
 			})
 			.expect("UktSource configuration is missing");
@@ -270,7 +270,7 @@ mod tests {
 			.as_mut()
 			.map(|ukt| {
 				ukt.oauth2_url =
-					test_helpers::get_mock_server_url(&mock_server, test_helpers::OATH2_PATH)
+					test_helpers::get_mock_server_url(&mock_server, test_helpers::OAUTH2_PATH)
 						.expect("Failed to get mock server URL");
 				ukt.endpoint_url =
 					test_helpers::get_mock_server_url(&mock_server, test_helpers::ENDPOINT_PATH)

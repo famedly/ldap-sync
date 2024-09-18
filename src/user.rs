@@ -27,8 +27,8 @@ pub(crate) struct User {
 
 impl User {
 	/// Convert the agnostic user to a Zitadel user
-	pub fn to_zitadel_user(&self, feature_flags: &FeatureFlags, idp_id: &str) -> ZidatelUser {
-		ZidatelUser {
+	pub fn to_zitadel_user(&self, feature_flags: &FeatureFlags, idp_id: &str) -> ZitadelUser {
+		ZitadelUser {
 			user_data: self.clone(),
 			needs_email_verification: feature_flags.is_enabled(FeatureFlag::VerifyEmail),
 			needs_phone_verification: feature_flags.is_enabled(FeatureFlag::VerifyPhone),
@@ -39,7 +39,7 @@ impl User {
 
 /// Crate-internal representation of a Zitadel user
 #[derive(Clone, Debug)]
-pub struct ZidatelUser {
+pub struct ZitadelUser {
 	/// Details about the user
 	pub(crate) user_data: User,
 
@@ -51,7 +51,7 @@ pub struct ZidatelUser {
 	pub(crate) idp_id: Option<String>,
 }
 
-impl ZidatelUser {
+impl ZitadelUser {
 	/// Get a display name for the user
 	pub(crate) fn get_display_name(&self) -> String {
 		format!("{}, {}", self.user_data.last_name, self.user_data.first_name)
@@ -76,8 +76,8 @@ impl ZidatelUser {
 	}
 }
 
-impl From<ZidatelUser> for ImportHumanUserRequest {
-	fn from(user: ZidatelUser) -> Self {
+impl From<ZitadelUser> for ImportHumanUserRequest {
+	fn from(user: ZitadelUser) -> Self {
 		Self {
 			user_name: user.user_data.email.clone().to_string(),
 			profile: Some(Profile {
@@ -106,7 +106,7 @@ impl From<ZidatelUser> for ImportHumanUserRequest {
 	}
 }
 
-impl Display for ZidatelUser {
+impl Display for ZitadelUser {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		write!(f, "email={}", &self.user_data.email)
 	}

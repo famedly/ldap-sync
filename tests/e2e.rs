@@ -6,7 +6,7 @@ use base64::prelude::{Engine, BASE64_STANDARD};
 use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings, Mod};
 use ldap_sync::{
 	test_helpers::{
-		get_mock_server_url, prepare_endpoint_mock, prepare_oauth2_mock, ENDPOINT_PATH, OATH2_PATH,
+		get_mock_server_url, prepare_endpoint_mock, prepare_oauth2_mock, ENDPOINT_PATH, OAUTH2_PATH,
 	},
 	AttributeMapping, Config, FeatureFlag,
 };
@@ -788,7 +788,7 @@ async fn test_e2e_ukt_sync() {
 		.ukt
 		.as_mut()
 		.map(|ukt| {
-			ukt.oauth2_url = get_mock_server_url(&mock_server, OATH2_PATH)
+			ukt.oauth2_url = get_mock_server_url(&mock_server, OAUTH2_PATH)
 				.expect("Failed to get mock server URL");
 			ukt.endpoint_url = get_mock_server_url(&mock_server, ENDPOINT_PATH)
 				.expect("Failed to get mock server URL");
@@ -848,7 +848,7 @@ async fn test_e2e_full_sync_with_ldap_and_ukt() {
 		.ukt
 		.as_mut()
 		.map(|ukt| {
-			ukt.oauth2_url = get_mock_server_url(&mock_server, OATH2_PATH)
+			ukt.oauth2_url = get_mock_server_url(&mock_server, OAUTH2_PATH)
 				.expect("Failed to get mock server URL");
 			ukt.endpoint_url = get_mock_server_url(&mock_server, ENDPOINT_PATH)
 				.expect("Failed to get mock server URL");
