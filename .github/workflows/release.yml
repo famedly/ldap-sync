@@ -1,0 +1,149 @@
+name: Release
+
+on:
+  push:
+    tags:
+      # For root tags, such as v0.4.2
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+      # For subfolder tags, such as workflow-engine-v1.18.0
+      #- "[a-zA-Z-_]+v[0-9]+.[0-9]+.[0-9]+"
+      #- "[a-zA-Z-_]+v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+
+jobs:
+  build:
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            asset_name: ${{ github.event.repository.name }}-linux-amd64-latest
+          - platform: linux/arm64
+            runner: arm-ubuntu-latest-8core
+            asset_name: ${{ github.event.repository.name }}-linux-aarch64-latest
+    runs-on: ${{ matrix.runner }}
+    container: docker-oss.nexus.famedly.de/rust-container:nightly
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: famedly/backend-build-workflows/.github/actions/rust-prepare@main
+        with:
+          gitlab_ssh: ${{ secrets.CI_SSH_PRIVATE_KEY}}
+          gitlab_user: ${{ secrets.GITLAB_USER }}
+          gitlab_pass: ${{ secrets.GITLAB_PASS }}
+
+      - name: Caching
+        uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+
+      - name: Install additional cargo tooling
+        uses: taiki-e/cache-cargo-install-action@3d5e3efe44b020826abe522d18cb4457042280ef
+        with:
+          tool: cargo-auditable
+
+      - name: Build release
+        shell: bash
+        run: cargo auditable build --release
+
+      - name: Rename binary
+        shell: bash
+        run: "mv target/release/${{ github.event.repository.name }} target/release/${{ matrix.asset_name }}"
+
+      - name: Attest
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: '${{ github.workspace }}/target/release/${{ matrix.asset_name }}'
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.asset_name }}
+          path: '${{ github.workspace }}/target/release/${{ matrix.asset_name }}'
+
+  sbom:
+    permissions:
+      id-token: write
+      contents: read
+      attestations: write
+    runs-on: ubuntu-latest
+    container: docker-oss.nexus.famedly.de/rust-container:nightly
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: famedly/backend-build-workflows/.github/actions/rust-prepare@main
+        with:
+          gitlab_ssh: ${{ secrets.CI_SSH_PRIVATE_KEY}}
+          gitlab_user: ${{ secrets.GITLAB_USER }}
+          gitlab_pass: ${{ secrets.GITLAB_PASS }}
+
+      - name: Caching
+        uses: Swatinem/rust-cache@b8a6852b4f997182bdea832df3f9e153038b5191
+        with:
+          cache-on-failure: true
+          cache-all-crates: true
+
+      - name: Install cargo-sbom
+        uses: taiki-e/cache-cargo-install-action@3d5e3efe44b020826abe522d18cb4457042280ef
+        with:
+          tool: cargo-sbom
+
+      - name: Install cyclonedx-rust-cargo
+        uses: taiki-e/cache-cargo-install-action@3d5e3efe44b020826abe522d18cb4457042280ef
+        with:
+          tool: cargo-cyclonedx
+
+      - name: Generate SPDX SBOM
+        shell: bash
+        run: 'cargo sbom > ${{ github.event.repository.name }}.spdx.json'
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: cargo cyclonedx -f json
+
+      - name: Attest SPDX SBOM
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: '${{ github.workspace }}/${{ github.event.repository.name }}.spdx.json'
+      - name: Attest CycloneDX SBOM
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: '${{ github.workspace }}/${{ github.event.repository.name }}.cdx.json'
+
+      - name: Upload SPDX SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-sbom-spdx
+          path: '${{ github.workspace }}/${{ github.event.repository.name}}.spdx.json'
+      - name: Upload CycloneDX SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-sbom-cdx
+          path: '${{ github.workspace }}/${{ github.event.repository.name }}.cdx.json'
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [build, sbom]
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@79721680dfc87fb0f44dfe65df68961056d55c38
+        with:
+          files: artifacts/*
+          prerelease: "${{ contains(github.ref_name, 'rc') }}"
+          generate_release_notes: true
+
