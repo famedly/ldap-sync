@@ -4,6 +4,7 @@ This tool synchronizes users from different sources to Famedly's Zitadel instanc
 
 Currently supported sources:
 - LDAP
+- CSV
 - Custom endpoint provided by UKT
 
 ## Configuration

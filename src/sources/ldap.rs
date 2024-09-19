@@ -131,7 +131,7 @@ impl LdapSource {
 		let preferred_username =
 			read_search_entry(&entry, &self.ldap_config.attributes.preferred_username)?;
 		let email = read_search_entry(&entry, &self.ldap_config.attributes.email)?;
-		let user_id = read_search_entry(&entry, &self.ldap_config.attributes.user_id)?;
+		let ldap_user_id = read_search_entry(&entry, &self.ldap_config.attributes.user_id)?;
 		let phone = read_search_entry(&entry, &self.ldap_config.attributes.phone).ok();
 
 		Ok(User {
@@ -139,7 +139,7 @@ impl LdapSource {
 			last_name,
 			preferred_username,
 			email,
-			ldap_id: user_id,
+			external_user_id: ldap_user_id,
 			phone,
 			enabled,
 		})
@@ -381,7 +381,7 @@ mod tests {
           organization_id: 1
           project_id: 1
           idp_id: 1
-        
+
         sources:
           ldap:
             url: ldap://localhost:1389
@@ -568,7 +568,7 @@ mod tests {
 		assert_eq!(user.email, StringOrBytes::String("testuser@example.com".to_owned()));
 		assert_eq!(user.phone, Some(StringOrBytes::String("123456789".to_owned())));
 		assert_eq!(user.preferred_username, StringOrBytes::String("testuser".to_owned()));
-		assert_eq!(user.ldap_id, StringOrBytes::String("testuser".to_owned()));
+		assert_eq!(user.external_user_id, StringOrBytes::String("testuser".to_owned()));
 		assert!(user.enabled);
 	}
 }

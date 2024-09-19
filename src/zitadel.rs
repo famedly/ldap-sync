@@ -422,7 +422,7 @@ impl Zitadel {
 			)
 			.await?;
 
-		let id = match &user.user_data.ldap_id {
+		let id = match &user.user_data.external_user_id {
 			StringOrBytes::String(value) => value.as_bytes(),
 			StringOrBytes::Bytes(value) => value,
 		};

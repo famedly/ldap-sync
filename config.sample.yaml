@@ -107,3 +107,11 @@ sources:
     scope: "openid read-maillist"
     # Grant type
     grant_type: client_credentials
+
+  # Configuration for the CSV source - reads a CSV file
+  # and creates **new** users in Famedly's Zitadel.
+  # Expected structure of the CSV file is as follows:
+  # email,first_name,last_name,phone
+  csv:
+    # Path to the CSV file to read from.
+    file_path:  ./tests/environment/files/test-users.csv

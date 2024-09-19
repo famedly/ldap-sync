@@ -11,6 +11,7 @@ use url::Url;
 
 use crate::{
 	sources::{
+		csv::{CsvSource, CsvSourceConfig},
 		ldap::{LdapSource, LdapSourceConfig},
 		ukt::{UktSource, UktSourceConfig},
 		Source,
@@ -44,6 +45,8 @@ pub struct SourcesConfig {
 	pub ldap: Option<LdapSourceConfig>,
 	/// Optional UKT configuration
 	pub ukt: Option<UktSourceConfig>,
+	/// Optional CSV configuration
+	pub csv: Option<CsvSourceConfig>,
 }
 
 impl Config {
@@ -93,6 +96,11 @@ impl Config {
 		if let Some(ukt_config) = &self.sources.ukt {
 			let ukt = UktSource::new(ukt_config.clone());
 			sources.push(Box::new(ukt));
+		}
+
+		if let Some(csv_config) = &self.sources.csv {
+			let csv = CsvSource::new(csv_config.clone());
+			sources.push(Box::new(csv));
 		}
 
 		// Setup Zitadel client
@@ -196,7 +204,7 @@ mod tests {
           organization_id: 1
           project_id: 1
           idp_id: 1
-        
+
         sources:
           test: 1
 

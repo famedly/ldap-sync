@@ -6,4 +6,7 @@ mod user;
 mod zitadel;
 
 pub use config::{Config, FeatureFlag};
-pub use sources::{ldap::AttributeMapping, ukt::test_helpers};
+pub use sources::{
+	csv::test_helpers as csv_test_helpers, ldap::AttributeMapping,
+	ukt::test_helpers as ukt_test_helpers,
+};

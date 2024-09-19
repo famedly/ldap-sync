@@ -13,16 +13,16 @@ pub(crate) struct User {
 	pub(crate) first_name: StringOrBytes,
 	/// The user's last name
 	pub(crate) last_name: StringOrBytes,
-	/// The user's preferred username
-	pub(crate) preferred_username: StringOrBytes,
 	/// The user's email address
 	pub(crate) email: StringOrBytes,
-	/// The user's LDAP ID
-	pub(crate) ldap_id: StringOrBytes,
 	/// The user's phone number
 	pub(crate) phone: Option<StringOrBytes>,
 	/// Whether the user is enabled
 	pub(crate) enabled: bool,
+	/// The user's preferred username
+	pub(crate) preferred_username: StringOrBytes,
+	/// The user's LDAP ID
+	pub(crate) external_user_id: StringOrBytes,
 }
 
 impl User {
@@ -67,7 +67,7 @@ impl ZitadelUser {
 		if let Some(idp_id) = self.idp_id.clone() {
 			vec![Idp {
 				config_id: idp_id,
-				external_user_id: self.user_data.ldap_id.clone().to_string(),
+				external_user_id: self.user_data.external_user_id.clone().to_string(),
 				display_name: self.get_display_name(),
 			}]
 		} else {
@@ -85,7 +85,7 @@ impl From<ZitadelUser> for ImportHumanUserRequest {
 				last_name: user.user_data.last_name.clone().to_string(),
 				display_name: user.get_display_name(),
 				gender: Gender::Unspecified.into(), // 0 means "unspecified",
-				nick_name: user.user_data.ldap_id.clone().to_string(),
+				nick_name: user.user_data.external_user_id.clone().to_string(),
 				preferred_language: String::default(),
 			}),
 			email: Some(Email {

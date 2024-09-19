@@ -5,7 +5,8 @@ use std::{collections::HashSet, path::Path, time::Duration};
 use base64::prelude::{Engine, BASE64_STANDARD};
 use ldap3::{Ldap as LdapClient, LdapConnAsync, LdapConnSettings, Mod};
 use ldap_sync::{
-	test_helpers::{
+	csv_test_helpers::temp_csv_file,
+	ukt_test_helpers::{
 		get_mock_server_url, prepare_endpoint_mock, prepare_oauth2_mock, ENDPOINT_PATH, OAUTH2_PATH,
 	},
 	AttributeMapping, Config, FeatureFlag,
@@ -23,6 +24,12 @@ use zitadel_rust_client::{
 
 static CONFIG: OnceCell<Config> = OnceCell::const_new();
 static TEMPDIR: OnceCell<TempDir> = OnceCell::const_new();
+
+/// The Famedly UUID namespace to use to generate v5 UUIDs.
+const FAMEDLY_NAMESPACE: Uuid = uuid!("d9979cff-abee-4666-bc88-1ec45a843fb8");
+
+/// The Zitadel project role to assign to users.
+const FAMEDLY_USER_ROLE: &str = "User";
 
 #[test(tokio::test)]
 #[test_log(default_log_filter = "debug")]
@@ -80,7 +87,7 @@ async fn test_e2e_simple_sync() {
 		.expect("could not get user metadata");
 	assert_eq!(preferred_username, Some("Bobby".to_owned()));
 
-	let uuid = Uuid::new_v5(&uuid!("d9979cff-abee-4666-bc88-1ec45a843fb8"), "simple".as_bytes());
+	let uuid = Uuid::new_v5(&FAMEDLY_NAMESPACE, "simple".as_bytes());
 
 	let localpart = zitadel
 		.get_user_metadata(Some(config.zitadel.organization_id.clone()), &user.id, "localpart")
@@ -94,7 +101,7 @@ async fn test_e2e_simple_sync() {
 		.expect("failed to get user grants");
 
 	let grant = grants.result.first().expect("no user grants found");
-	assert!(grant.role_keys.clone().into_iter().any(|key| key == "User"));
+	assert!(grant.role_keys.clone().into_iter().any(|key| key == FAMEDLY_USER_ROLE));
 }
 
 #[test(tokio::test)]
@@ -837,7 +844,100 @@ async fn test_e2e_ukt_sync() {
 
 #[test(tokio::test)]
 #[test_log(default_log_filter = "debug")]
-async fn test_e2e_full_sync_with_ldap_and_ukt() {
+async fn test_e2e_csv_sync() {
+	let mut config = config().await.clone();
+
+	config.perform_sync().await.expect("syncing failed");
+
+	let zitadel = open_zitadel_connection().await;
+	let user = zitadel
+		.get_user_by_login_name("john.doe@example.com")
+		.await
+		.expect("could not query Zitadel users");
+
+	assert!(user.is_some());
+
+	let user = user.expect("could not find user");
+
+	assert_eq!(user.user_name, "john.doe@example.com");
+
+	if let Some(UserType::Human(user)) = user.r#type {
+		let profile = user.profile.expect("user lacks a profile");
+		let phone = user.phone.expect("user lacks a phone number");
+		let email = user.email.expect("user lacks an email address");
+
+		assert_eq!(profile.first_name, "John");
+		assert_eq!(profile.last_name, "Doe");
+		assert_eq!(profile.display_name, "Doe, John");
+		assert_eq!(phone.phone, "+1111111111");
+		assert!(phone.is_phone_verified);
+		assert_eq!(email.email, "john.doe@example.com");
+		assert!(email.is_email_verified);
+	} else {
+		panic!("user lacks details");
+	}
+
+	let preferred_username = zitadel
+		.get_user_metadata(
+			Some(config.zitadel.organization_id.clone()),
+			&user.id,
+			"preferred_username",
+		)
+		.await
+		.expect("could not get user metadata");
+	assert_eq!(preferred_username, Some("john.doe@example.com".to_owned()));
+
+	let uuid = Uuid::new_v5(&FAMEDLY_NAMESPACE, "john.doe@example.com".as_bytes());
+
+	let localpart = zitadel
+		.get_user_metadata(Some(config.zitadel.organization_id.clone()), &user.id, "localpart")
+		.await
+		.expect("could not get user metadata");
+	assert_eq!(localpart, Some(uuid.to_string()));
+
+	let grants = zitadel
+		.list_user_grants(&config.zitadel.organization_id, &user.id)
+		.await
+		.expect("failed to get user grants");
+
+	let grant = grants.result.first().expect("no user grants found");
+	assert!(grant.role_keys.clone().into_iter().any(|key| key == FAMEDLY_USER_ROLE));
+
+	// Not possible to re-import an existing user (as checked by unique email)
+	let csv_content = indoc::indoc! {r#"
+    email,first_name,last_name,phone
+    john.doe@example.com,Changed_Name,Changed_Surname,+2222222222
+  "#};
+	let _file = temp_csv_file(&mut config, csv_content);
+	config.perform_sync().await.expect("syncing failed");
+
+	let user = zitadel
+		.get_user_by_login_name("john.doe@example.com")
+		.await
+		.expect("could not query Zitadel users");
+	assert!(user.is_some());
+	let user = user.expect("could not find user");
+	assert_eq!(user.user_name, "john.doe@example.com");
+	if let Some(UserType::Human(user)) = user.r#type {
+		let profile = user.profile.expect("user lacks a profile");
+		let phone = user.phone.expect("user lacks a phone number");
+		let email = user.email.expect("user lacks an email address");
+
+		assert_eq!(profile.first_name, "John");
+		assert_eq!(profile.last_name, "Doe");
+		assert_eq!(profile.display_name, "Doe, John");
+		assert_eq!(phone.phone, "+1111111111");
+		assert!(phone.is_phone_verified);
+		assert_eq!(email.email, "john.doe@example.com");
+		assert!(email.is_email_verified);
+	} else {
+		panic!("user lacks details");
+	}
+}
+
+#[test(tokio::test)]
+#[test_log(default_log_filter = "debug")]
+async fn test_e2e_full_sync() {
 	let mock_server = MockServer::start().await;
 	prepare_oauth2_mock(&mock_server).await;
 	prepare_endpoint_mock(&mock_server, "not_to_be_there@famedly.de").await;
@@ -900,9 +1000,41 @@ async fn test_e2e_full_sync_with_ldap_and_ukt() {
 	)
 	.await;
 
+	let csv_content = indoc::indoc! {r#"
+    email,first_name,last_name,phone
+    csv_sync@example.com,John,Doe,+1111111111
+  "#};
+	// Have to create a new temp file
+	// because we can't re-use users between tests
+	// and the ./tests/environment/files/test-users.csv was already imported
+	let _file = temp_csv_file(&mut config, csv_content);
+
 	config.perform_sync().await.expect("syncing failed");
 
 	let zitadel = open_zitadel_connection().await;
+
+	let user = zitadel
+		.get_user_by_login_name("csv_sync@example.com")
+		.await
+		.expect("could not query Zitadel users");
+	assert!(user.is_some());
+	let user = user.expect("could not find user");
+	assert_eq!(user.user_name, "csv_sync@example.com");
+	if let Some(UserType::Human(user)) = user.r#type {
+		let profile = user.profile.expect("user lacks a profile");
+		let phone = user.phone.expect("user lacks a phone number");
+		let email = user.email.expect("user lacks an email address");
+
+		assert_eq!(profile.first_name, "John");
+		assert_eq!(profile.last_name, "Doe");
+		assert_eq!(profile.display_name, "Doe, John");
+		assert_eq!(phone.phone, "+1111111111");
+		assert!(phone.is_phone_verified);
+		assert_eq!(email.email, "csv_sync@example.com");
+		assert!(email.is_email_verified);
+	} else {
+		panic!("user lacks details");
+	}
 
 	let user = zitadel.get_user_by_login_name("not_to_be_there@famedly.de").await;
 	assert!(user.is_err_and(|error| matches!(error, ZitadelError::TonicResponseError(status) if status.code() == TonicErrorCode::NotFound)));

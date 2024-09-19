@@ -5,6 +5,7 @@ use async_trait::async_trait;
 
 use crate::zitadel::SourceDiff;
 
+pub mod csv;
 pub mod ldap;
 pub mod ukt;
 

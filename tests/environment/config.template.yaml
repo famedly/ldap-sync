@@ -42,5 +42,8 @@ sources:
     scope: "openid read-maillist"
     grant_type: client_credentials
 
+  csv:
+    file_path: ./tests/environment/files/test-users.csv
+
 feature_flags:
   - sso_login
