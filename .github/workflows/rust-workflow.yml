@@ -110,22 +110,9 @@ jobs:
     - name: Setup LCOV
       uses: hrishikesh-kadam/setup-lcov@6c1aa0cc9e1c02f9f58f01ac599f1064ccc83470
 
-    - name: Report code coverage
-      uses: zgosalvez/github-actions-report-lcov@fea161ae6d85807479ea109d42259c9165558a64
+    - name: Codecov
+      uses: codecov/codecov-action@v4
       with:
-        working-directory: ./head/
-        coverage-files: ${{github.workspace}}/lcov.info
-        artifact-name: code-coverage-report
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        update-comment: true
+        token: ${{secrets.CODECOV_TOKEN}}
+        files: "${{github.workspace}}/lcov.info"
 
-  # review_app_coverage:
-  #   if: github.event_name == 'pull_request'
-  #   needs: [tests]
-  #   secrets: inherit
-  #   uses: famedly/frontend-ci-templates/.github/workflows/review-app.yml@main
-  #   with:
-  #     projectname: "ldap-sync-coverage"
-  #     pr: ${{ github.event.pull_request.number }}
-  #     environment: "review"
-  #     artifact-name: "code-coverage-report"
