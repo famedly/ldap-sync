@@ -2,7 +2,7 @@
 use std::fmt::Display;
 
 use base64::prelude::{Engine, BASE64_STANDARD};
-use zitadel_rust_client::{Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile};
+use zitadel_rust_client::v1::{Email, Gender, Idp, ImportHumanUserRequest, Phone, Profile};
 
 use crate::{config::FeatureFlags, FeatureFlag};
 

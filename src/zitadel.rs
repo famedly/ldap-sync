@@ -5,7 +5,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use url::Url;
 use uuid::{uuid, Uuid};
-use zitadel_rust_client::{
+use zitadel_rust_client::v1::{
 	error::{Error as ZitadelError, TonicErrorCode},
 	Zitadel as ZitadelClient,
 };

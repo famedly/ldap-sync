@@ -17,7 +17,7 @@ use tokio::sync::OnceCell;
 use url::Url;
 use uuid::{uuid, Uuid};
 use wiremock::MockServer;
-use zitadel_rust_client::{
+use zitadel_rust_client::v1::{
 	error::{Error as ZitadelError, TonicErrorCode},
 	Email, Gender, ImportHumanUserRequest, Phone, Profile, UserType, Zitadel,
 };
