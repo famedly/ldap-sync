@@ -97,7 +97,7 @@ jobs:
       working-directory: head
       run: |
         docker compose --project-directory ./tests/environment down -v
-        cargo llvm-cov nextest --no-fail-fast --workspace --lcov --output-path '${{github.workspace}}/lcov.info'
+        cargo llvm-cov nextest --profile ci --workspace --lcov --output-path '${{github.workspace}}/lcov.info'
         sed "s|$PWD/||g" -i '${{github.workspace}}/lcov.info'
 
     - name: Get docker logs on failure
@@ -110,9 +110,15 @@ jobs:
     - name: Setup LCOV
       uses: hrishikesh-kadam/setup-lcov@6c1aa0cc9e1c02f9f58f01ac599f1064ccc83470
 
-    - name: Codecov
+    - name: Codecov - Upload coverage
       uses: codecov/codecov-action@v4
       with:
         token: ${{secrets.CODECOV_TOKEN}}
         files: "${{github.workspace}}/lcov.info"
+
+    - name: Codecov - Upload test results
+      uses: codecov/test-results-action@v1
+      with:
+        token: ${{secrets.CODECOV_TOKEN}}
+        file: "${{github.workspace}}/target/ci/junit.xml"
 

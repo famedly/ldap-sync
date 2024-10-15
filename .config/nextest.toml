@@ -18,3 +18,11 @@ setup = "start-e2e-env"
 [[profile.default.overrides]]
 filter = "test(e2e)"
 test-group = "e2e"
+
+[profile.ci]
+fail-fast = false
+
+[profile.ci.junit]
+path = "junit.xml"
+store-success-output = true
+store-failure-output = true
