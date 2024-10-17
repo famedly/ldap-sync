@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ldap-sync
+  namespace: ldap-sync
+spec:
+  schedule: "0 0 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: ldap-sync
+              image: docker-oss.nexus.famedly.de/famedly-sync-agent:v0.4.0
+              imagePullPolicy: IfNotPresent
+              volumeMounts:
+                - mountPath: /opt/famedly-sync-agent/
+                  name: famedly-sync-config
+          restartPolicy: OnFailure
+          volumes:
+            - name: famedly-sync-config
+              configMap:
+                name: famedly-sync

@@ -124,6 +124,23 @@ Or alternatively, without `docker compose`:
 docker run --rm -it --network host --volume ./opt:/opt/famedly-sync-agent docker-oss.nexus.famedly.de/famedly-sync-agent:latest
 ```
 
+### Kubernetes Deployment
+
+The provided manifest `ldap-sync-cronjob.yaml` can be used
+to deploy this tool as a CronJob on a Kubernetes cluster.
+
+```
+kubectl create -f ldap-sync-deployment.yaml
+```
+
+It will run `docker-oss.nexus.famedly.de/famedly-sync-agent:v0.4.0` once per day
+at 00:00 in the namespace `ldap-sync`. It requires a ConfigMap named `famedly-sync`
+to be present in the `ldap-sync` namespace. The ConfigMap can be created using
+
+```
+kubectl create configmap --from-file config.yaml famedly-sync --namespace ldap-sync
+```
+
 ## Quirks & Edge Cases
 
 - Changing a user's LDAP id (the attribute from the `user_id` setting)
